@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  proof-server:
+    image: midnightnetwork/proof-server:latest
+    ports:
+      - "6300:6300"
+    environment:
+      - LOG_LEVEL=debug
+      - NETWORK_ID=devnet
+    volumes:
+      - ./contract/dist:/app/contracts:ro
+
+  node:
+    image: midnightnetwork/midnight-node:latest
+    ports:
+      - "9944:9944"
+    environment:
+      - DEV_MODE=true
