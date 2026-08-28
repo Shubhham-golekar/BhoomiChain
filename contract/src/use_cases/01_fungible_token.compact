@@ -1,0 +1,103 @@
+// ============================================================
+// USE CASE 1: FUNGIBLE TOKEN (Ethereum: ERC-20)
+// Midnight Compact equivalent of ERC-20 — Privacy-preserving token
+// Real-world: USDC, DAI, any utility/governance token
+// ============================================================
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+// ------ LEDGER STATE ------
+export ledger totalSupply: Uint;
+export ledger balances: Map<Bytes<32>, Uint>;     // publicKey -> balance (shielded)
+export ledger allowances: Map<Bytes<32>, Uint>;   // (owner+spender hash) -> amount
+
+export ledger minterKey: Bytes<32>;               // Only minter can mint new tokens
+
+constructor(vk: Bytes<32>) {
+  minterKey = vk;
+  totalSupply = 0;
+}
+
+// ------ WITNESSES (private inputs) ------
+witness localSecretKey(): Bytes<32>;
+
+// ------ HELPER ------
+export circuit publicKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "token:pk:"), sk]);
+}
+
+export circuit allowanceKey(owner: Bytes<32>, spender: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([owner, spender]);
+}
+
+// ------ CIRCUITS (ERC-20 equivalents) ------
+
+// mint() — only minter can create new tokens
+export circuit mint(to: Bytes<32>, amount: Uint): [] {
+  assert(publicKey(localSecretKey()) == minterKey, "Only minter can mint");
+  const current = balances.lookup(to);
+  if (current == none<Uint>()) {
+    balances.insert(to, amount);
+  } else {
+    balances.insert(to, current.value + amount);
+  }
+  totalSupply = totalSupply + amount;
+}
+
+// transfer() — send tokens from caller to recipient
+export circuit transfer(to: Bytes<32>, amount: Uint): [] {
+  const from = publicKey(localSecretKey());
+  const fromBal = balances.lookup(from);
+  assert(fromBal != none<Uint>(), "No balance");
+  assert(fromBal.value >= amount, "Insufficient balance");
+
+  balances.insert(from, fromBal.value - amount);
+
+  const toBal = balances.lookup(to);
+  if (toBal == none<Uint>()) {
+    balances.insert(to, amount);
+  } else {
+    balances.insert(to, toBal.value + amount);
+  }
+}
+
+// approve() — allow spender to use tokens on your behalf
+export circuit approve(spender: Bytes<32>, amount: Uint): [] {
+  const owner = publicKey(localSecretKey());
+  const key = allowanceKey(owner, spender);
+  allowances.insert(key, amount);
+}
+
+// transferFrom() — spender uses approved tokens
+export circuit transferFrom(owner: Bytes<32>, to: Bytes<32>, amount: Uint): [] {
+  const spender = publicKey(localSecretKey());
+  const key = allowanceKey(owner, spender);
+  const allowed = allowances.lookup(key);
+  assert(allowed != none<Uint>(), "No allowance");
+  assert(allowed.value >= amount, "Allowance exceeded");
+
+  const ownerBal = balances.lookup(owner);
+  assert(ownerBal != none<Uint>(), "Owner has no balance");
+  assert(ownerBal.value >= amount, "Insufficient balance");
+
+  allowances.insert(key, allowed.value - amount);
+  balances.insert(owner, ownerBal.value - amount);
+
+  const toBal = balances.lookup(to);
+  if (toBal == none<Uint>()) {
+    balances.insert(to, amount);
+  } else {
+    balances.insert(to, toBal.value + amount);
+  }
+}
+
+// burn() — destroy tokens
+export circuit burn(amount: Uint): [] {
+  const caller = publicKey(localSecretKey());
+  const bal = balances.lookup(caller);
+  assert(bal != none<Uint>(), "No balance");
+  assert(bal.value >= amount, "Insufficient balance");
+  balances.insert(caller, bal.value - amount);
+  totalSupply = totalSupply - amount;
+}

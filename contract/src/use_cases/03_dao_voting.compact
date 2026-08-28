@@ -1,0 +1,90 @@
+// ============================================================
+// USE CASE 3: DAO GOVERNANCE / VOTING (Ethereum: Governor, Snapshot)
+// Midnight Compact — Privacy-preserving DAO voting
+// Real-world: Company governance, community voting, Aave/Compound-style proposals
+// KEY ADVANTAGE over Ethereum: Vote is PRIVATE — nobody can see HOW you voted
+// ============================================================
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+// ------ LEDGER STATE ------
+export ledger proposalCount: Counter;
+export ledger proposalTitle: Map<Field, Bytes<32>>;  // proposalId -> title hash
+export ledger votesFor: Map<Field, Uint>;            // proposalId -> yes votes
+export ledger votesAgainst: Map<Field, Uint>;        // proposalId -> no votes
+export ledger hasVoted: Map<Bytes<32>, Boolean>;     // hash(member+proposalId) -> voted?
+export ledger proposalActive: Map<Field, Boolean>;   // proposalId -> active?
+
+export ledger memberTokens: Map<Bytes<32>, Uint>;    // member -> voting power
+export ledger adminKey: Bytes<32>;
+
+constructor(vk: Bytes<32>) {
+  adminKey = vk;
+}
+
+// ------ WITNESSES ------
+witness localSecretKey(): Bytes<32>;
+witness getVoteChoice(): Boolean; // TRUE = yes, FALSE = no (PRIVATE — ZK proof)
+
+// ------ HELPERS ------
+export circuit publicKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "dao:pk:"), sk]);
+}
+
+export circuit voteKey(member: Bytes<32>, proposalId: Field): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([member, pad(32, proposalId as Uint as Field)]);
+}
+
+// ------ CIRCUITS ------
+
+// addMember() — give voting tokens to a member
+export circuit addMember(member: Bytes<32>, votingPower: Uint): [] {
+  assert(publicKey(localSecretKey()) == adminKey, "Only admin");
+  memberTokens.insert(member, votingPower);
+}
+
+// createProposal() — admin creates a new proposal
+export circuit createProposal(titleHash: Bytes<32>): [] {
+  assert(publicKey(localSecretKey()) == adminKey, "Only admin can create proposals");
+  const id = proposalCount as Field;
+  proposalCount.increment(1);
+  proposalTitle.insert(id, titleHash);
+  votesFor.insert(id, 0);
+  votesAgainst.insert(id, 0);
+  proposalActive.insert(id, true);
+}
+
+// castVote() — vote privately (ZK proof that you have voting power, without revealing HOW you voted)
+export circuit castVote(proposalId: Field): [] {
+  const caller = publicKey(localSecretKey());
+
+  assert(proposalActive.lookup(proposalId) == some<Boolean>(true), "Proposal not active");
+
+  const vKey = voteKey(caller, proposalId);
+  assert(hasVoted.lookup(vKey) != some<Boolean>(true), "Already voted");
+
+  const power = memberTokens.lookup(caller);
+  assert(power != none<Uint>(), "Not a member");
+  assert(power.value > 0, "No voting power");
+
+  // The vote choice is PRIVATE — only the proof goes on chain, not the actual vote
+  const vote = disclose(getVoteChoice());
+
+  if (vote) {
+    const current = votesFor.lookup(proposalId).value;
+    votesFor.insert(proposalId, current + power.value);
+  } else {
+    const current = votesAgainst.lookup(proposalId).value;
+    votesAgainst.insert(proposalId, current + power.value);
+  }
+
+  hasVoted.insert(vKey, true);
+}
+
+// closeProposal() — admin closes voting
+export circuit closeProposal(proposalId: Field): [] {
+  assert(publicKey(localSecretKey()) == adminKey, "Only admin");
+  assert(proposalActive.lookup(proposalId) == some<Boolean>(true), "Already closed");
+  proposalActive.insert(proposalId, false);
+}

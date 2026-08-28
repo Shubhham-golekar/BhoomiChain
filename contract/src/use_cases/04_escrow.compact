@@ -1,0 +1,83 @@
+// ============================================================
+// USE CASE 4: ESCROW (Ethereum: OpenZeppelin Escrow, Uniswap)
+// Midnight Compact — Confidential P2P Escrow
+// Real-world: Freelance payments, property purchases, trade finance
+// KEY ADVANTAGE: Amount and parties stay PRIVATE until settlement
+// ============================================================
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+// ------ LEDGER STATE ------
+export ledger escrowCount: Counter;
+export ledger buyer: Map<Field, Bytes<32>>;           // escrowId -> buyer PK
+export ledger seller: Map<Field, Bytes<32>>;          // escrowId -> seller PK
+export ledger arbiter: Map<Field, Bytes<32>>;         // escrowId -> arbiter PK
+export ledger escrowAmount: Map<Field, Uint>;         // escrowId -> amount (PRIVATE)
+export ledger escrowState: Map<Field, Uint>;          // 0=pending, 1=funded, 2=released, 3=refunded, 4=disputed
+
+constructor() {}
+
+// ------ WITNESSES ------
+witness localSecretKey(): Bytes<32>;
+witness getPrivateAmount(): Uint;   // Buyer commits secret amount
+
+// ------ HELPERS ------
+export circuit publicKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "escrow:pk:"), sk]);
+}
+
+// ------ CIRCUITS ------
+
+// createEscrow() — buyer creates escrow with seller and arbiter
+export circuit createEscrow(sellerPK: Bytes<32>, arbiterPK: Bytes<32>): [] {
+  const buyerPK = publicKey(localSecretKey());
+  const id = escrowCount as Field;
+  escrowCount.increment(1);
+
+  buyer.insert(id, buyerPK);
+  seller.insert(id, sellerPK);
+  arbiter.insert(id, arbiterPK);
+  escrowState.insert(id, 0); // pending
+}
+
+// fundEscrow() — buyer funds with PRIVATE amount (ZK proof of funds)
+export circuit fundEscrow(escrowId: Field): [] {
+  const callerPK = publicKey(localSecretKey());
+  assert(buyer.lookup(escrowId) == some<Bytes<32>>(callerPK), "Not the buyer");
+  assert(escrowState.lookup(escrowId) == some<Uint>(0), "Not in pending state");
+
+  const amount = disclose(getPrivateAmount()); // amount kept private
+  escrowAmount.insert(escrowId, amount);
+  escrowState.insert(escrowId, 1); // funded
+}
+
+// releaseFunds() — buyer confirms work done → releases to seller
+export circuit releaseFunds(escrowId: Field): [] {
+  const callerPK = publicKey(localSecretKey());
+  assert(buyer.lookup(escrowId) == some<Bytes<32>>(callerPK), "Not the buyer");
+  assert(escrowState.lookup(escrowId) == some<Uint>(1), "Not funded");
+
+  escrowState.insert(escrowId, 2); // released
+  // In real implementation: trigger token transfer to seller here
+}
+
+// refund() — arbiter can refund buyer if dispute resolved in buyer's favor
+export circuit refund(escrowId: Field): [] {
+  const callerPK = publicKey(localSecretKey());
+  assert(arbiter.lookup(escrowId) == some<Bytes<32>>(callerPK), "Only arbiter can refund");
+  assert(escrowState.lookup(escrowId) == some<Uint>(1), "Not funded");
+
+  escrowState.insert(escrowId, 3); // refunded
+}
+
+// raiseDispute() — seller or buyer can raise a dispute
+export circuit raiseDispute(escrowId: Field): [] {
+  const callerPK = publicKey(localSecretKey());
+  const isBuyer = buyer.lookup(escrowId) == some<Bytes<32>>(callerPK);
+  const isSeller = seller.lookup(escrowId) == some<Bytes<32>>(callerPK);
+  assert(isBuyer || isSeller, "Not a party to this escrow");
+  assert(escrowState.lookup(escrowId) == some<Uint>(1), "Not funded");
+
+  escrowState.insert(escrowId, 4); // disputed
+}

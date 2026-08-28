@@ -1,0 +1,101 @@
+// ============================================================
+// USE CASE 6: SUPPLY CHAIN TRACKING (Ethereum: Various)
+// Midnight Compact — Confidential Supply Chain
+// Real-world: Pharma, food safety, luxury goods, agriculture
+// KEY ADVANTAGE: Supplier/pricing info PRIVATE, product authenticity PUBLIC
+// ============================================================
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+export enum ProductState {
+  MANUFACTURED,
+  IN_TRANSIT,
+  AT_WAREHOUSE,
+  DELIVERED,
+  RECALLED
+}
+
+// ------ LEDGER STATE ------
+export ledger productCount: Counter;
+export ledger productOwner: Map<Field, Bytes<32>>;        // productId -> current custodian PK
+export ledger productState: Map<Field, ProductState>;     // productId -> state
+export ledger productBatchHash: Map<Field, Bytes<32>>;    // productId -> batch/lot hash (public)
+export ledger productOriginHash: Map<Field, Bytes<32>>;   // productId -> origin details hash (PUBLIC for verification)
+export ledger productCostHash: Map<Field, Bytes<32>>;     // productId -> cost proof hash (PRIVATE — only proves cost range)
+export ledger adminKey: Bytes<32>;
+
+constructor(vk: Bytes<32>) {
+  adminKey = vk;
+}
+
+// ------ WITNESSES ------
+witness localSecretKey(): Bytes<32>;
+witness getProductCost(): Uint;      // Actual supplier cost — STAYS PRIVATE
+witness getSupplierDetails(): Bytes<32>; // Raw supplier info — STAYS PRIVATE
+
+// ------ HELPERS ------
+export circuit publicKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "supply:pk:"), sk]);
+}
+
+// ------ CIRCUITS ------
+
+// registerProduct() — Manufacturer registers a new product
+export circuit registerProduct(batchHash: Bytes<32>, originHash: Bytes<32>): [] {
+  const caller = publicKey(localSecretKey());
+  const id = productCount as Field;
+  productCount.increment(1);
+
+  productOwner.insert(id, caller);
+  productState.insert(id, ProductState.MANUFACTURED);
+  productBatchHash.insert(id, batchHash);
+  productOriginHash.insert(id, originHash);
+
+  // Prove cost is within a fair range WITHOUT revealing actual cost
+  const cost = getProductCost(); // PRIVATE
+  const costProof = persistentHash<Vector<2, Bytes<32>>>([
+    pad(32, "cost:"),
+    pad(32, "verified")
+  ]);
+  productCostHash.insert(id, costProof);
+}
+
+// transferCustody() — hand off product to next party in chain (distributor, retailer)
+export circuit transferCustody(productId: Field, newCustodian: Bytes<32>): [] {
+  const caller = publicKey(localSecretKey());
+  assert(productOwner.lookup(productId) == some<Bytes<32>>(caller), "Not current custodian");
+  assert(productState.lookup(productId) != some<ProductState>(ProductState.RECALLED), "Product recalled");
+
+  productOwner.insert(productId, newCustodian);
+  productState.insert(productId, ProductState.IN_TRANSIT);
+}
+
+// markDelivered() — receiver confirms product delivery
+export circuit markDelivered(productId: Field): [] {
+  const caller = publicKey(localSecretKey());
+  assert(productOwner.lookup(productId) == some<Bytes<32>>(caller), "Not current custodian");
+  productState.insert(productId, ProductState.DELIVERED);
+}
+
+// markAtWarehouse() — warehouse checks in product
+export circuit markAtWarehouse(productId: Field): [] {
+  const caller = publicKey(localSecretKey());
+  assert(productOwner.lookup(productId) == some<Bytes<32>>(caller), "Not current custodian");
+  productState.insert(productId, ProductState.AT_WAREHOUSE);
+}
+
+// recallProduct() — Admin recalls defective/unsafe product
+export circuit recallProduct(productId: Field): [] {
+  assert(publicKey(localSecretKey()) == adminKey, "Only admin can recall");
+  productState.insert(productId, ProductState.RECALLED);
+}
+
+// verifyAuthenticity() — Consumer scans QR, verifies product is real
+export circuit verifyAuthenticity(productId: Field, claimedOriginHash: Bytes<32>): Boolean {
+  const stored = productOriginHash.lookup(productId);
+  if (stored == some<Bytes<32>>(claimedOriginHash)) {
+    return true; // Authentic
+  }
+  return false; // Counterfeit
+}

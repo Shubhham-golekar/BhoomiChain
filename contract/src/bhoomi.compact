@@ -1,0 +1,169 @@
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BhoomiChain — Land Tokenization DApp on Midnight Network
+// Language: Compact (Midnight's ZK-native smart contract language)
+// Network:  Midnight Preview / Preprod
+//
+// Ethereum equivalent: ERC-721 NFT + DeFi collateral lending, with the
+// KEY difference that land valuations are PRIVATE via ZK witnesses — never
+// exposed on-chain.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── ENUMS ────────────────────────────────────────────────────────────────────
+
+export enum ParcelStatus {
+  VERIFIED,    // Admin has verified ownership docs; parcel is registered
+  LOCKED,      // Parcel is collateralised against a loan
+  UNLOCKED,    // Loan fully repaid; parcel is free again
+  DEFAULTED    // Loan overdue; parcel is seized by lender
+}
+
+// ── LEDGER STATE (public, stored on-chain) ───────────────────────────────────
+
+export ledger parcelCount: Counter;                      // Auto-incrementing parcel ID
+export ledger parcelOwner:  Map<Field, Bytes<32>>;       // parcelId → ownerPublicKey
+export ledger parcelStatus: Map<Field, ParcelStatus>;    // parcelId → status
+export ledger parcelDocHash: Map<Field, Bytes<32>>;      // parcelId → IPFS / doc hash (public)
+
+// Loan state – amounts are disclosed (public) because lenders need them
+export ledger loanPrincipal: Map<Field, Uint>;           // parcelId → loan principal
+export ledger loanDueBlock:  Map<Field, Uint>;           // parcelId → repayment deadline (block)
+
+// Transfer approvals (like NFT approve)
+export ledger parcelApproved: Map<Field, Bytes<32>>;     // parcelId → approved spender PK
+
+// Admin / governance
+export ledger adminKey: Bytes<32>;                       // Only admin can mint parcels
+
+// ── CONSTRUCTOR ──────────────────────────────────────────────────────────────
+
+constructor(adminVerifyKey: Bytes<32>) {
+  adminKey = adminVerifyKey;
+}
+
+// ── WITNESSES (PRIVATE inputs — ZK proofs, never go on-chain) ────────────────
+
+witness localSecretKey(): Bytes<32>;
+// Land valuation stays PRIVATE — used to compute LTV without exposing the value
+witness getLandValue(): Uint;
+
+// ── HELPER CIRCUITS ──────────────────────────────────────────────────────────
+
+// Derive a deterministic public key from a secret key.
+// Equivalent to: Ethereum address = keccak256(publicKey)
+export circuit publicKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "bhoomi:v1:pk:"), sk]);
+}
+
+// Compute the loan amount from a private land value and an LTV percentage.
+// The result is DISCLOSED (made public) but the raw land value stays secret.
+export circuit computeLoanAmount(landValue: Uint, ltvPercent: Uint): Uint {
+  return disclose(landValue * ltvPercent / 100);
+}
+
+// ── CORE CIRCUITS ─────────────────────────────────────────────────────────────
+
+// mintParcel — Admin registers a verified land parcel on-chain
+// Equivalent to: ERC-721 mint()
+// Only admin can call this (ZK proof of admin key)
+export circuit mintParcel(toOwnerPK: Bytes<32>, docHashParam: Bytes<32>): [] {
+  assert(publicKey(localSecretKey()) == adminKey, "Only admin can mint land parcels");
+
+  const newId = parcelCount as Field;
+  parcelCount.increment(1);
+
+  parcelOwner.insert(newId, toOwnerPK);
+  parcelStatus.insert(newId, ParcelStatus.VERIFIED);
+  parcelDocHash.insert(newId, docHashParam);
+}
+
+// transferParcel — Owner transfers land deed to another address
+// Equivalent to: ERC-721 transferFrom()
+export circuit transferParcel(parcelId: Field, newOwnerPK: Bytes<32>): [] {
+  const caller = publicKey(localSecretKey());
+  const isOwner   = parcelOwner.lookup(parcelId) == some<Bytes<32>>(caller);
+  const isApproved = parcelApproved.lookup(parcelId) == some<Bytes<32>>(caller);
+  assert(isOwner || isApproved, "Not owner or approved to transfer");
+  assert(parcelStatus.lookup(parcelId) != some<ParcelStatus>(ParcelStatus.LOCKED),
+    "Cannot transfer a locked parcel — repay loan first");
+
+  parcelOwner.insert(parcelId, newOwnerPK);
+  parcelApproved.remove(parcelId); // Clear approval on transfer
+}
+
+// approveTransfer — Let someone else transfer a specific parcel
+// Equivalent to: ERC-721 approve()
+export circuit approveTransfer(parcelId: Field, spenderPK: Bytes<32>): [] {
+  const caller = publicKey(localSecretKey());
+  assert(parcelOwner.lookup(parcelId) == some<Bytes<32>>(caller), "Not the owner");
+  parcelApproved.insert(parcelId, spenderPK);
+}
+
+// lockCollateral — Owner locks their land as collateral to get a loan
+// The actual land VALUE is computed privately via ZK witness.
+// Only the LOAN AMOUNT (a derived figure) is disclosed on-chain.
+export circuit lockCollateral(parcelId: Field, ltvPercent: Uint, dueBlock: Uint): [] {
+  const caller = publicKey(localSecretKey());
+  assert(parcelOwner.lookup(parcelId) == some<Bytes<32>>(caller), "Not the owner");
+  assert(
+    parcelStatus.lookup(parcelId) == some<ParcelStatus>(ParcelStatus.VERIFIED) ||
+    parcelStatus.lookup(parcelId) == some<ParcelStatus>(ParcelStatus.UNLOCKED),
+    "Parcel must be VERIFIED or UNLOCKED to use as collateral"
+  );
+  assert(ltvPercent > 0 && ltvPercent <= 80, "LTV must be between 1% and 80%");
+
+  // Land value is a ZK witness — it proves the loan amount is correct
+  // without ever revealing the actual valuation on-chain
+  const landValue = getLandValue();
+  const loanAmt = computeLoanAmount(landValue, ltvPercent);
+
+  parcelStatus.insert(parcelId, ParcelStatus.LOCKED);
+  loanPrincipal.insert(parcelId, loanAmt);
+  loanDueBlock.insert(parcelId, disclose(dueBlock));
+}
+
+// repayLoan — Borrower repays the full loan amount
+// After repayment the parcel is automatically unlocked
+export circuit repayLoan(parcelId: Field, repaymentAmount: Uint): [] {
+  const caller = publicKey(localSecretKey());
+  assert(parcelOwner.lookup(parcelId) == some<Bytes<32>>(caller), "Not the owner");
+  assert(parcelStatus.lookup(parcelId) == some<ParcelStatus>(ParcelStatus.LOCKED),
+    "Parcel is not locked");
+
+  const principal = loanPrincipal.lookup(parcelId);
+  assert(principal != none<Uint>(), "No active loan found");
+  assert(repaymentAmount >= principal.value, "Repayment amount is less than loan principal");
+
+  // Clear loan state
+  loanPrincipal.remove(parcelId);
+  loanDueBlock.remove(parcelId);
+
+  // Auto-unlock
+  parcelStatus.insert(parcelId, ParcelStatus.UNLOCKED);
+}
+
+// markDefault — Lender/admin marks a loan as defaulted when past due date
+export circuit markDefault(parcelId: Field, currentBlockHeight: Uint): [] {
+  // In production: restrict to lender or admin. Here: caller proves they are admin
+  assert(publicKey(localSecretKey()) == adminKey, "Only admin can mark defaults");
+  assert(parcelStatus.lookup(parcelId) == some<ParcelStatus>(ParcelStatus.LOCKED),
+    "Parcel is not locked");
+
+  const dueBlock = loanDueBlock.lookup(parcelId);
+  assert(dueBlock != none<Uint>(), "No active loan");
+  assert(disclose(currentBlockHeight) > dueBlock.value, "Loan is not yet overdue");
+
+  parcelStatus.insert(parcelId, ParcelStatus.DEFAULTED);
+  loanPrincipal.remove(parcelId);
+  loanDueBlock.remove(parcelId);
+}
+
+// updateDocHash — Admin can update the document hash (e.g., after re-survey)
+export circuit updateDocHash(parcelId: Field, newDocHash: Bytes<32>): [] {
+  assert(publicKey(localSecretKey()) == adminKey, "Only admin can update doc hashes");
+  assert(parcelDocHash.lookup(parcelId) != none<Bytes<32>>(), "Parcel does not exist");
+  parcelDocHash.insert(parcelId, newDocHash);
+}

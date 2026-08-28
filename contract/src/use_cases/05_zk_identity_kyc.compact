@@ -1,0 +1,77 @@
+// ============================================================
+// USE CASE 5: CONFIDENTIAL IDENTITY / KYC (Ethereum: ERC-725, Worldcoin)
+// Midnight Compact — Zero-Knowledge Identity Verification
+// Real-world: Age verification, KYC for DeFi, credential proofs
+// KEY ADVANTAGE: Prove "I am over 18" WITHOUT revealing your actual age/DOB
+// ============================================================
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+// ------ LEDGER STATE ------
+export ledger issuerKey: Bytes<32>;                      // Trusted KYC issuer
+export ledger verifiedUsers: Map<Bytes<32>, Boolean>;    // PK -> KYC passed?
+export ledger credentialHash: Map<Bytes<32>, Bytes<32>>; // PK -> hash of credential
+export ledger credentialType: Map<Bytes<32>, Uint>;      // PK -> 1=AgeCheck, 2=AccreditedInvestor, 3=AML
+
+constructor(vk: Bytes<32>) {
+  issuerKey = vk;
+}
+
+// ------ WITNESSES (ALL PRIVATE — never go on chain) ------
+witness localSecretKey(): Bytes<32>;
+witness getAge(): Uint;              // Actual age — STAYS PRIVATE
+witness getAnnualIncome(): Uint;     // Actual income — STAYS PRIVATE
+witness getPrivateCredential(): Bytes<32>; // Raw credential data — STAYS PRIVATE
+
+// ------ HELPERS ------
+export circuit publicKey(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "kyc:pk:"), sk]);
+}
+
+// ------ CIRCUITS ------
+
+// issueCredential() — KYC issuer verifies and issues credential
+export circuit issueCredential(userPK: Bytes<32>, credType: Uint, credHash: Bytes<32>): [] {
+  assert(publicKey(localSecretKey()) == issuerKey, "Only issuer can issue credentials");
+  credentialHash.insert(userPK, credHash);
+  credentialType.insert(userPK, credType);
+  verifiedUsers.insert(userPK, true);
+}
+
+// proveAgeOver18() — ZK proof: "I am over 18" WITHOUT revealing actual age
+// The actual age comes from witness (private), only the PROOF goes on chain
+export circuit proveAgeOver18(): [] {
+  const caller = publicKey(localSecretKey());
+  const age = getAge(); // PRIVATE — ZK circuit, never exposed
+  assert(age >= 18, "Must be 18 or older");
+  // On-chain: only records that this PK passed age check. Age itself stays private!
+  verifiedUsers.insert(caller, true);
+  credentialType.insert(caller, 1); // 1 = AgeVerified
+}
+
+// proveAccreditedInvestor() — ZK proof: "My income > $200,000" WITHOUT revealing income
+export circuit proveAccreditedInvestor(): [] {
+  const caller = publicKey(localSecretKey());
+  const income = getAnnualIncome(); // PRIVATE
+  assert(income >= 200000, "Must be accredited investor (income >= 200,000)");
+  verifiedUsers.insert(caller, true);
+  credentialType.insert(caller, 2); // 2 = AccreditedInvestor
+}
+
+// revokeCredential() — Issuer can revoke a credential (e.g., after fraud detection)
+export circuit revokeCredential(userPK: Bytes<32>): [] {
+  assert(publicKey(localSecretKey()) == issuerKey, "Only issuer can revoke");
+  verifiedUsers.insert(userPK, false);
+  credentialHash.remove(userPK);
+  credentialType.remove(userPK);
+}
+
+// checkVerified() — Anyone can check if a PK is verified (but NOT what their credentials are)
+export circuit checkVerified(userPK: Bytes<32>): Boolean {
+  const result = verifiedUsers.lookup(userPK);
+  if (result == some<Boolean>(true)) {
+    return true;
+  }
+  return false;
+}
