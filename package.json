@@ -5,13 +5,15 @@
   "license": "MIT",
   "private": true,
   "type": "module",
+  "scripts": {
+    "build:vercel": "cd frontend && npx vite build --mode preview"
+  },
   "engines": {
-    "node": ">=24.11.1"
+    "node": ">=20.0.0"
   },
   "workspaces": {
     "packages": [
-      "bboard-cli",
-      "bboard-ui",
+      "frontend",
       "api",
       "contract"
     ]
