@@ -1,5 +1,6 @@
 {
   "name": "@midnight-ntwrk/bboard-contract",
+  "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -17,7 +18,7 @@
     "ci": "npm run compact && npm run typecheck && npm run lint && npm run build && npm run test",
     "compact": "compact compile src/bhoomi.compact ./src/managed/bhoomi",
     "lint": "eslint src",
-    "prepack": "npm build",
+    "prepack": "npm run build",
     "test": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
