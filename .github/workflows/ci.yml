@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  frontend-build:
+    name: Frontend Build & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: TypeScript type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+        continue-on-error: true
+
+      - name: Build frontend (Vite)
+        working-directory: frontend
+        run: npx vite build --mode preview
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Run ESLint
+        working-directory: frontend
+        run: npx eslint ./src --max-warnings 50
+        continue-on-error: true
