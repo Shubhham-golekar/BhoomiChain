@@ -1,23 +1,10 @@
 // This file is part of midnightntwrk/example-counter.
 // Copyright (C) Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
-// Licensed under the Apache License, Version 2.0 (the "License");
-// You may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
 
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import wasm from 'vite-plugin-wasm';
-import topLevelAwait from 'vite-plugin-top-level-await';
-// import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -45,15 +32,10 @@ export default defineConfig({
     react(),
     // Configure WASM plugin with more options
     wasm(),
-    topLevelAwait({
-      // Be more permissive with top-level await
-      promiseExportName: '__tla',
-      promiseImportName: (i) => `__tla_${i}`,
-    }),
     // Custom resolver for handling problematic modules
     {
       name: 'wasm-module-resolver',
-      resolveId(source, importer) {
+      resolveId(source: string, importer: string | undefined) {
         // Special handling for the problematic module
         if (
           source === '@midnight-ntwrk/onchain-runtime-v3' &&
