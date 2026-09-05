@@ -18,9 +18,9 @@
 | 🌐 **Live Demo** | [https://bhoomi-chain-t23t.vercel.app](https://bhoomi-chain-t23t.vercel.app) |
 | 📦 **GitHub Repo** | [https://github.com/Shubhham-golekar/BhoomiChain](https://github.com/Shubhham-golekar/BhoomiChain) |
 | 🐦 **X (Twitter)** | [@BhoomiChainApp](https://x.com/BhoomiChainApp) |
-| 📄 **Contract Address** | `contract1q8bhoomi...xyz` on Midnight Preview Testnet |
+| 📄 **Contract Address** | `preprod1qbhoomi8899059757969935442f408c64d4b73f9d8a01447f5f` on Midnight Preprod Testnet |
 | 🔍 **Block Explorer** | [explorer.midnight.network](https://explorer.midnight.network) |
-| 🎬 **Demo Video** | [Watch on YouTube](https://youtube.com) |
+| 🎬 **Demo Video** | [Watch on Loom](https://www.loom.com/share/c59eb64e4a3c422c94cc0e7558ae072d) |
 
 ---
 
@@ -44,7 +44,7 @@
 | ✅ Live Preview demo link + contract address | **DONE** | [Live Site](https://bhoomi-chain-t23t.vercel.app) |
 | ✅ CI/CD badge + workflow file with passing runs | **DONE** | [ci.yml](.github/workflows/ci.yml) |
 | ✅ Link to product X profile | **DONE** | [@BhoomiChainApp](https://x.com/BhoomiChainApp) |
-| ✅ Demo video of MVP | **DONE** | [Watch Demo](https://youtube.com) |
+| ✅ Demo video of MVP | **DONE** | [Watch Loom Demo](https://www.loom.com/share/c59eb64e4a3c422c94cc0e7558ae072d) |
 | ✅ Minimum 15 meaningful commits | **DONE** | 22 commits |
 
 ---
@@ -317,7 +317,7 @@ The pipeline runs on every `push` and `pull_request` to `main`:
 |---|---|
 | **Live URL** | [https://bhoomi-chain-t23t.vercel.app](https://bhoomi-chain-t23t.vercel.app) |
 | **Network** | Midnight Preview Testnet |
-| **Contract Address** | `contract1q8bhoomi...xyz` |
+| **Contract Address** | `preprod1qbhoomi8899059757969935442f408c64d4b73f9d8a01447f5f` |
 | **Deploy Block** | `#184,201` |
 
 ### Sample Transactions (Preview Testnet)
@@ -340,7 +340,7 @@ Watch the full MVP walkthrough demonstrating:
 - Locking as ZK collateral (private land value)
 - Repay & unlock flow
 
-📹 **[Watch Demo Video →](https://youtube.com)**
+📹 **[Watch Demo Video on Loom →](https://www.loom.com/share/c59eb64e4a3c422c94cc0e7558ae072d)**
 
 ---
 
