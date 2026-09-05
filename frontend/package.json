@@ -38,7 +38,7 @@
     "esbuild": "^0.28.2",
     "eslint-plugin-react": "^7.37.5",
     "rollup": "^4.62.4",
-    "typescript": "^5.9.3",
+    "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vite-plugin-node-polyfills": "^0.28.0",
     "vite-plugin-top-level-await": "^1.6.0",
