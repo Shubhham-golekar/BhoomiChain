@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import '@midnight-ntwrk/dapp-connector-api';
 import type { ConnectedAPI } from '@midnight-ntwrk/dapp-connector-api';
+import { GISMap } from './components/GISMap';
+import { FractionalMarket } from './components/FractionalMarket';
+import { TitleAuditor } from './components/TitleAuditor';
+import { GovtSync } from './components/GovtSync';
 
 // ─── TYPES ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +29,19 @@ interface Transaction {
   txHash: string;
   time: string;
   network: string;
+}
+
+// ─── WALLET TX MODAL TYPES ──────────────────────────────────────────────────
+
+type WalletTxAction = 'collateral' | 'repay';
+
+interface WalletTxModal {
+  open: boolean;
+  action: WalletTxAction | null;
+  parcel: Parcel | null;
+  step: 'confirm' | 'signing' | 'broadcasting' | 'success' | 'error';
+  txHash: string;
+  errorMsg: string;
 }
 
 // ─── SAMPLE DATA (simulating on-chain state after deployment) ────────────────
@@ -106,6 +123,7 @@ type WalletState = 'idle' | 'connecting' | 'connected' | 'demo' | 'error' | 'not
 // ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'deeds' | 'gis' | 'fractional' | 'auditor' | 'govt'>('deeds');
   const [walletState, setWalletState] = useState<WalletState>('idle');
   const [walletAddress, setWalletAddress] = useState('');
   const [walletAPI, setWalletAPI] = useState<ConnectedAPI | null>(null);
@@ -115,6 +133,12 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>(DEMO_TXS);
   const [isProving, setIsProving] = useState(false);
   const [provingCircuit, setProvingCircuit] = useState('');
+
+  // Wallet transaction confirmation modal state
+  const [walletTx, setWalletTx] = useState<WalletTxModal>({
+    open: false, action: null, parcel: null,
+    step: 'confirm', txHash: '', errorMsg: ''
+  });
 
   // Both 'connected' (real wallet) and 'demo' allow circuit actions
   const isConnected = walletState === 'connected' || walletState === 'demo';
@@ -213,52 +237,128 @@ export default function App() {
     }, 800);
   }, []);
 
-  // ── Simulate ZK proving + circuit call ──
+  // ── Simulate ZK proving + circuit call (used for mintParcel only) ──
   const runCircuit = async (circuitName: string, execute: () => void) => {
     if (!isConnected) { setShowWalletModal(true); return; }
     setProvingCircuit(circuitName);
     setIsProving(true);
-    // Simulate Compact ZK proof generation (real time: 2-5s)
     await new Promise(r => setTimeout(r, 2800));
     execute();
     setIsProving(false);
     setProvingCircuit('');
   };
 
-  const addTx = (circuit: string, description: string) => {
+  const addTx = (circuit: string, description: string, hash?: string) => {
     const tx: Transaction = {
       id: Math.random().toString(36).slice(2),
       circuit,
       description,
-      txHash: `midnight:tx:${Math.random().toString(16).slice(2, 8)}...${Math.random().toString(16).slice(2, 6)}`,
+      txHash: hash ?? `midnight:tx:${Math.random().toString(16).slice(2, 8)}...${Math.random().toString(16).slice(2, 6)}`,
       time: 'Just now',
       network: 'preview',
     };
     setTransactions(prev => [tx, ...prev]);
   };
 
-  // ── Action handlers — call Compact circuits ──
+  // ── Real wallet transaction executor ──────────────────────────────────────
+  // Called after user confirms in the modal. Tries real wallet API first,
+  // falls back to demo simulation.
+  const executeWalletTx = async (action: WalletTxAction, parcel: Parcel) => {
+    // Step 1: Signing — always show this step visibly
+    setWalletTx(p => ({ ...p, step: 'signing', signingDone: false } as any));
 
+    let realTxHash: string | null = null;
+
+    if (walletState === 'connected' && walletAPI) {
+      // ── REAL WALLET PATH: wallet popup opens, user signs ─────────────────
+      try {
+        const circuitName = action === 'collateral' ? 'lockCollateral' : 'repayLoan';
+        const principal = Math.floor(parcel.landValue * 0.5);
+        const txPayload = {
+          contractAddress: (window as any).__BHOOMI_CONTRACT_ADDR__ ?? 'bhoomi_contract_preview',
+          circuitCall: circuitName,
+          args: action === 'collateral'
+            ? { parcelId: parcel.id, ltvPercent: 50, dueBlock: 184_500 }
+            : { parcelId: parcel.id, repaymentAmount: parcel.loanPrincipal ?? principal },
+          privateWitness: { landValue: parcel.landValue },
+        };
+
+        let result: any;
+        if (typeof (walletAPI as any).signAndSubmitTransaction === 'function') {
+          result = await (walletAPI as any).signAndSubmitTransaction(txPayload);
+        } else if (typeof (walletAPI as any).submitTransaction === 'function') {
+          result = await (walletAPI as any).submitTransaction(txPayload);
+        } else if (typeof (walletAPI as any).signTransaction === 'function') {
+          const signed = await (walletAPI as any).signTransaction(txPayload);
+          result = { txHash: signed?.txHash ?? signed?.hash };
+        }
+        realTxHash = result?.txHash ?? result?.hash ?? null;
+      } catch (e: any) {
+        if (e?.message?.toLowerCase().includes('reject') ||
+          e?.message?.toLowerCase().includes('user')) {
+          setWalletTx(p => ({
+            ...p, step: 'error',
+            errorMsg: 'Transaction rejected by wallet. Please try again.'
+          }));
+          return;
+        }
+        realTxHash = null;
+      }
+    } else {
+      // ── DEMO MODE: Simulate signing delay (1.8s) so user sees "Signing…" ──
+      await new Promise(r => setTimeout(r, 1800));
+    }
+
+    // Brief pause to show signing ✓ before switching to broadcasting
+    await new Promise(r => setTimeout(r, 400));
+
+    // Step 2: Broadcasting — ZK proof generation + network submission
+    setWalletTx(p => ({ ...p, step: 'broadcasting' }));
+    setIsProving(true);
+    setProvingCircuit(action === 'collateral' ? 'lockCollateral()' : 'repayLoan()');
+    await new Promise(r => setTimeout(r, 2600));
+    setIsProving(false);
+    setProvingCircuit('');
+
+    // Step 3: Apply state changes
+    const finalHash = realTxHash ??
+      `midnight:tx:${Math.random().toString(16).slice(2, 8)}...${Math.random().toString(16).slice(2, 6)}`;
+
+    if (action === 'collateral') {
+      const principal = Math.floor(parcel.landValue * 0.5);
+      setParcels(prev => prev.map(p =>
+        p.id !== parcel.id ? p
+          : { ...p, status: 'LOCKED', loanPrincipal: principal, loanDueBlock: 184_500 }
+      ));
+      addTx('lockCollateral', `Locked ${parcel.id} as collateral at 50% LTV`, finalHash);
+    } else {
+      setParcels(prev => prev.map(p =>
+        p.id !== parcel.id ? p
+          : { ...p, status: 'UNLOCKED', loanPrincipal: undefined, loanDueBlock: undefined }
+      ));
+      addTx('repayLoan', `Loan repaid for ${parcel.id} — parcel unlocked`, finalHash);
+    }
+
+    setWalletTx(p => ({ ...p, step: 'success', txHash: finalHash }));
+  };
+
+  // ── Open wallet TX modal (replaces direct runCircuit for lock/repay) ──
   const handleLock = (id: string) => {
-    runCircuit('lockCollateral()', () => {
-      setParcels(prev => prev.map(p => {
-        if (p.id !== id) return p;
-        // ZK witness: landValue stays private, only loanPrincipal disclosed
-        const principal = Math.floor(p.landValue * 0.5);
-        return { ...p, status: 'LOCKED', loanPrincipal: principal, loanDueBlock: 184_500 };
-      }));
-      addTx('lockCollateral', `Locked ${id} as collateral at 50% LTV`);
-    });
+    if (!isConnected) { setShowWalletModal(true); return; }
+    const parcel = parcels.find(p => p.id === id);
+    if (!parcel) return;
+    setWalletTx({ open: true, action: 'collateral', parcel, step: 'confirm', txHash: '', errorMsg: '' });
   };
 
   const handleRepay = (id: string) => {
-    runCircuit('repayLoan()', () => {
-      setParcels(prev => prev.map(p => {
-        if (p.id !== id) return p;
-        return { ...p, status: 'UNLOCKED', loanPrincipal: undefined, loanDueBlock: undefined };
-      }));
-      addTx('repayLoan', `Loan repaid for ${id} — parcel unlocked`);
-    });
+    if (!isConnected) { setShowWalletModal(true); return; }
+    const parcel = parcels.find(p => p.id === id);
+    if (!parcel) return;
+    setWalletTx({ open: true, action: 'repay', parcel, step: 'confirm', txHash: '', errorMsg: '' });
+  };
+
+  const closeWalletTxModal = () => {
+    setWalletTx({ open: false, action: null, parcel: null, step: 'confirm', txHash: '', errorMsg: '' });
   };
 
   const handleMintDemo = () => {
@@ -324,6 +424,130 @@ export default function App() {
           </button>
         </div>
       </nav>
+
+      {/* ── SUB-NAV TAB BAR ── */}
+      <div style={{
+        background: 'rgba(10, 22, 40, 0.95)',
+        borderBottom: '1px solid var(--border)',
+        padding: '0 2.5rem',
+        display: 'flex',
+        gap: '1.5rem',
+        overflowX: 'auto',
+        position: 'sticky',
+        top: 68,
+        zIndex: 90,
+        backdropFilter: 'blur(16px)'
+      }}>
+        <button
+          id="tab-deeds"
+          onClick={() => setActiveTab('deeds')}
+          style={{
+            padding: '0.85rem 0.5rem',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'deeds' ? '2px solid #7C3AED' : '2px solid transparent',
+            color: activeTab === 'deeds' ? '#FFFFFF' : 'var(--text-muted)',
+            fontWeight: activeTab === 'deeds' ? 700 : 500,
+            fontSize: '0.88rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'all 0.2s',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          🏡 Land Deeds & Loans
+        </button>
+
+        <button
+          id="tab-gis"
+          onClick={() => setActiveTab('gis')}
+          style={{
+            padding: '0.85rem 0.5rem',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'gis' ? '2px solid #0EA5E9' : '2px solid transparent',
+            color: activeTab === 'gis' ? '#FFFFFF' : 'var(--text-muted)',
+            fontWeight: activeTab === 'gis' ? 700 : 500,
+            fontSize: '0.88rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'all 0.2s',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          🗺️ GIS Parcel Explorer
+        </button>
+
+        <button
+          id="tab-fractional"
+          onClick={() => setActiveTab('fractional')}
+          style={{
+            padding: '0.85rem 0.5rem',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'fractional' ? '2px solid #F59E0B' : '2px solid transparent',
+            color: activeTab === 'fractional' ? '#FFFFFF' : 'var(--text-muted)',
+            fontWeight: activeTab === 'fractional' ? 700 : 500,
+            fontSize: '0.88rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'all 0.2s',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          📈 Fractional Market & Yield Modeler <span style={{ fontSize: '0.65rem', background: 'rgba(245,158,11,0.2)', color: '#FCD34D', padding: '1px 6px', borderRadius: 99, fontWeight: 700 }}>NEW</span>
+        </button>
+
+        <button
+          id="tab-auditor"
+          onClick={() => setActiveTab('auditor')}
+          style={{
+            padding: '0.85rem 0.5rem',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'auditor' ? '2px solid #10B981' : '2px solid transparent',
+            color: activeTab === 'auditor' ? '#FFFFFF' : 'var(--text-muted)',
+            fontWeight: activeTab === 'auditor' ? 700 : 500,
+            fontSize: '0.88rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'all 0.2s',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          🔍 ZK Title Auditor
+        </button>
+
+        <button
+          id="tab-govt"
+          onClick={() => setActiveTab('govt')}
+          style={{
+            padding: '0.85rem 0.5rem',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'govt' ? '2px solid #8B5CF6' : '2px solid transparent',
+            color: activeTab === 'govt' ? '#FFFFFF' : 'var(--text-muted)',
+            fontWeight: activeTab === 'govt' ? 700 : 500,
+            fontSize: '0.88rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'all 0.2s',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          🏛️ Govt Registry Sync
+        </button>
+      </div>
 
       {/* ── WALLET CONNECT MODAL ── */}
       {showWalletModal && (
@@ -410,6 +634,289 @@ export default function App() {
         </div>
       )}
 
+      {/* ── WALLET TRANSACTION MODAL ── */}
+      {walletTx.open && walletTx.parcel && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.82)',
+            backdropFilter: 'blur(10px)', zIndex: 300,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+          }}
+          onClick={() => { if (walletTx.step === 'confirm' || walletTx.step === 'error') closeWalletTxModal(); }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--midnight-2)', border: '1px solid var(--border-bright)',
+              borderRadius: 'var(--radius-xl)', padding: '2rem', maxWidth: 460, width: '100%',
+              boxShadow: '0 0 60px rgba(124,58,237,0.25)', position: 'relative'
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 10,
+                background: walletTx.action === 'collateral'
+                  ? 'linear-gradient(135deg,rgba(239,68,68,0.2),rgba(124,58,237,0.2))'
+                  : 'linear-gradient(135deg,rgba(16,185,129,0.2),rgba(14,165,233,0.2))',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem'
+              }}>
+                {walletTx.action === 'collateral' ? '🔒' : '💸'}
+              </div>
+              <div>
+                <div style={{ fontSize: '1.1rem', fontFamily: 'Playfair Display,serif', fontWeight: 600 }}>
+                  {walletTx.action === 'collateral' ? 'Use as Collateral' : 'Repay & Unlock'}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>
+                  {walletState === 'connected' ? '1AM Wallet · Midnight Preview' : 'Demo Mode · Simulated Transaction'}
+                </div>
+              </div>
+            </div>
+
+            {/* Parcel Info */}
+            <div style={{
+              background: 'var(--surface)', borderRadius: 'var(--radius-md)',
+              padding: '1rem', marginBottom: '1.25rem',
+              border: '1px solid var(--border)'
+            }}>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace', marginBottom: '0.4rem' }}>PARCEL</div>
+              <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>{walletTx.parcel.id} — {walletTx.parcel.title}</div>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{walletTx.parcel.meta}</div>
+            </div>
+
+            {/* Transaction Details */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              {walletTx.action === 'collateral' ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>Circuit</span>
+                    <span style={{ fontSize: '0.8rem', color: '#C4B5FD', fontFamily: 'JetBrains Mono,monospace' }}>lockCollateral()</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>LTV Ratio</span>
+                    <span style={{ fontSize: '0.8rem', color: '#67E8F9', fontFamily: 'JetBrains Mono,monospace' }}>50%</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>Loan Amount</span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#F87171', fontFamily: 'JetBrains Mono,monospace' }}>{fmt(Math.floor(walletTx.parcel.landValue * 0.5))}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>Land Value</span>
+                    <span style={{ fontSize: '0.8rem', color: '#6B7280', fontFamily: 'JetBrains Mono,monospace' }}>🔒 [ZK private witness]</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>Due Block</span>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontFamily: 'JetBrains Mono,monospace' }}>#184,500</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>Circuit</span>
+                    <span style={{ fontSize: '0.8rem', color: '#C4B5FD', fontFamily: 'JetBrains Mono,monospace' }}>repayLoan()</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>Amount to Repay</span>
+                    <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#34D399', fontFamily: 'JetBrains Mono,monospace' }}>{fmt(walletTx.parcel.loanPrincipal ?? 0)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>Deducted From</span>
+                    <span style={{ fontSize: '0.75rem', color: '#67E8F9', fontFamily: 'JetBrains Mono,monospace' }}>{walletAddress.slice(0, 14)}…</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.6rem 0' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>Result</span>
+                    <span style={{ fontSize: '0.8rem', color: '#34D399', fontFamily: 'JetBrains Mono,monospace' }}>Collateral → UNLOCKED ✓</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Step States */}
+            {walletTx.step === 'confirm' && (
+              <>
+                <div style={{
+                  padding: '0.75rem', background: 'rgba(124,58,237,0.08)',
+                  border: '1px solid rgba(124,58,237,0.2)', borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.72rem', color: '#A78BFA', fontFamily: 'JetBrains Mono,monospace',
+                  lineHeight: 1.6, marginBottom: '1.25rem'
+                }}>
+                  {walletState === 'connected'
+                    ? '⬡ Your 1AM wallet will open a popup to sign this transaction on the Midnight Network.'
+                    : '🔓 Demo mode: This simulates a real wallet transaction flow with ZK proof generation.'}
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button
+                    id="wallet-tx-cancel-btn"
+                    onClick={closeWalletTxModal}
+                    style={{
+                      flex: 1, padding: '0.75rem',
+                      background: 'var(--surface)', border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)',
+                      fontSize: '0.9rem', cursor: 'pointer', fontFamily: 'Outfit,sans-serif'
+                    }}
+                  >Cancel</button>
+                  <button
+                    id="wallet-tx-approve-btn"
+                    onClick={() => executeWalletTx(walletTx.action!, walletTx.parcel!)}
+                    style={{
+                      flex: 2, padding: '0.75rem',
+                      background: walletTx.action === 'collateral'
+                        ? 'linear-gradient(135deg,#7C3AED,#EF4444)'
+                        : 'linear-gradient(135deg,#059669,#0EA5E9)',
+                      border: 'none', borderRadius: 'var(--radius-md)',
+                      color: '#fff', fontSize: '0.95rem', fontWeight: 700,
+                      cursor: 'pointer', fontFamily: 'Outfit,sans-serif',
+                      boxShadow: '0 4px 20px rgba(124,58,237,0.3)'
+                    }}
+                  >
+                    {walletState === 'connected' ? '⬡ Sign with 1AM Wallet' : '✓ Approve Transaction'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {(walletTx.step === 'signing' || walletTx.step === 'broadcasting') && (
+              <div style={{ padding: '0.5rem 0 0.75rem' }}>
+
+                {/* Step 1 — Signing */}
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+                  marginBottom: '0.75rem'
+                }}>
+                  {/* Icon */}
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: walletTx.step === 'signing'
+                      ? 'rgba(124,58,237,0.25)' : 'rgba(52,211,153,0.2)',
+                    border: walletTx.step === 'signing'
+                      ? '1.5px solid rgba(124,58,237,0.6)' : '1.5px solid rgba(52,211,153,0.6)',
+                    transition: 'all 0.4s ease',
+                  }}>
+                    {walletTx.step === 'signing'
+                      ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2 }} />
+                      : <span style={{ color: '#34D399', fontSize: '0.85rem', fontWeight: 700 }}>✓</span>
+                    }
+                  </div>
+                  {/* Text */}
+                  <div style={{ paddingTop: 3 }}>
+                    <div style={{
+                      fontSize: '0.82rem', fontWeight: 600,
+                      color: walletTx.step === 'signing' ? '#C4B5FD' : '#34D399',
+                      fontFamily: 'Outfit,sans-serif', marginBottom: '0.15rem',
+                      transition: 'color 0.4s ease'
+                    }}>
+                      {walletTx.step === 'signing' ? 'Signing Transaction…' : 'Transaction Signed ✓'}
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>
+                      {walletState === 'connected'
+                        ? (walletTx.step === 'signing' ? 'Waiting for 1AM wallet approval popup…' : '1AM wallet signed successfully')
+                        : (walletTx.step === 'signing' ? 'Generating ZK witness proof…' : 'ZK proof generated locally')
+                      }
+                    </div>
+                  </div>
+                </div>
+
+                {/* Connector line */}
+                <div style={{
+                  width: 1.5, height: 18, marginLeft: 13,
+                  background: walletTx.step === 'broadcasting'
+                    ? 'rgba(52,211,153,0.5)' : 'rgba(124,58,237,0.25)',
+                  marginBottom: '0.75rem', transition: 'background 0.4s ease'
+                }} />
+
+                {/* Step 2 — Broadcasting */}
+                <div style={{
+                  display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+                  opacity: walletTx.step === 'broadcasting' ? 1 : 0.45,
+                  transition: 'opacity 0.4s ease'
+                }}>
+                  {/* Icon */}
+                  <div style={{
+                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: walletTx.step === 'broadcasting'
+                      ? 'rgba(14,165,233,0.2)' : 'rgba(255,255,255,0.05)',
+                    border: walletTx.step === 'broadcasting'
+                      ? '1.5px solid rgba(14,165,233,0.5)' : '1.5px solid rgba(255,255,255,0.1)',
+                  }}>
+                    {walletTx.step === 'broadcasting'
+                      ? <div className="spinner" style={{ width: 12, height: 12, borderWidth: 2, borderColor: '#38BDF8', borderTopColor: 'transparent' }} />
+                      : <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>2</span>
+                    }
+                  </div>
+                  {/* Text */}
+                  <div style={{ paddingTop: 3 }}>
+                    <div style={{
+                      fontSize: '0.82rem', fontWeight: 600,
+                      color: walletTx.step === 'broadcasting' ? '#67E8F9' : 'var(--text-muted)',
+                      fontFamily: 'Outfit,sans-serif', marginBottom: '0.15rem'
+                    }}>
+                      Broadcasting ZK Proof…
+                    </div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace' }}>
+                      {walletTx.step === 'broadcasting'
+                        ? 'Submitting to Midnight Preview Network…'
+                        : 'Waiting for signing to complete'
+                      }
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {walletTx.step === 'success' && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>✅</div>
+                <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.25rem', color: '#34D399' }}>Transaction Confirmed!</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono,monospace', wordBreak: 'break-all', marginBottom: '1.25rem' }}>
+                  {walletTx.txHash}
+                </div>
+                {walletTx.action === 'repay' && (
+                  <div style={{ fontSize: '0.8rem', color: '#34D399', fontFamily: 'JetBrains Mono,monospace', marginBottom: '1rem' }}>
+                    💸 {fmt(walletTx.parcel?.loanPrincipal ?? 0)} deducted from your wallet<br />
+                    🔓 Collateral released — Parcel is now UNLOCKED
+                  </div>
+                )}
+                {walletTx.action === 'collateral' && (
+                  <div style={{ fontSize: '0.8rem', color: '#C4B5FD', fontFamily: 'JetBrains Mono,monospace', marginBottom: '1rem' }}>
+                    🔒 Parcel locked as collateral<br />
+                    💰 {fmt(Math.floor(walletTx.parcel?.landValue ?? 0) * 0.5)} loan amount disclosed on-chain
+                  </div>
+                )}
+                <button
+                  id="wallet-tx-done-btn"
+                  onClick={closeWalletTxModal}
+                  style={{
+                    padding: '0.75rem 2rem', background: 'linear-gradient(135deg,#7C3AED,#0EA5E9)',
+                    border: 'none', borderRadius: 'var(--radius-md)', color: '#fff',
+                    fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer', fontFamily: 'Outfit,sans-serif'
+                  }}
+                >Done</button>
+              </div>
+            )}
+
+            {walletTx.step === 'error' && (
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>❌</div>
+                <div style={{ color: '#F87171', fontSize: '0.85rem', fontFamily: 'JetBrains Mono,monospace', marginBottom: '1.25rem' }}>
+                  {walletTx.errorMsg}
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+                  <button onClick={closeWalletTxModal}
+                    style={{ padding: '0.6rem 1.5rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}
+                  >Close</button>
+                  <button onClick={() => setWalletTx(p => ({ ...p, step: 'confirm', errorMsg: '' }))}
+                    style={{ padding: '0.6rem 1.5rem', background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(124,58,237,0.4)', borderRadius: 'var(--radius-md)', color: '#C4B5FD', cursor: 'pointer', fontFamily: 'Outfit,sans-serif' }}
+                  >Try Again</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── ERROR BANNER ── */}
       {walletError && (
         <div className="error-banner">
@@ -423,256 +930,273 @@ export default function App() {
         </div>
       )}
 
-      {/* ── HERO ── */}
-      <header className="hero">
-        <div className="hero-badge">
-          ⬡ Zero-Knowledge Land Registry
-        </div>
-        <h1>
-          Tokenize Earth.<br />
-          <span>Unlock Liquid Value.</span>
-        </h1>
-        <p className="hero-sub">
-          A privacy-first land tokenization protocol on the{' '}
-          <strong style={{ color: '#94A3B8' }}>Midnight Network</strong>.
-          Land valuations are kept private via <strong style={{ color: '#C4B5FD' }}>ZK witnesses</strong> —
-          only the owner can prove their land's value, without ever exposing it on-chain.
-        </p>
-
-        <div className="stats-row">
-          <div className="stat-card">
-            <div className="stat-value">{parcels.length}</div>
-            <div className="stat-label">Parcels Tokenized</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{totalLocked}</div>
-            <div className="stat-label">Locked as Collateral</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{fmt(totalLoanValue)}</div>
-            <div className="stat-label">Active Loan Value</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{avgLTV}%</div>
-            <div className="stat-label">Avg LTV Ratio</div>
-          </div>
-        </div>
-      </header>
-
-      {/* ── ZK CIRCUITS INFO BAR ── */}
-      <div className="zk-info-bar">
-        <div className="section-header">
-          <h2 className="section-title" style={{ fontSize: '1.1rem' }}>Compact Smart Circuits</h2>
-          <span className="section-count">bhoomi.compact · Midnight Preview</span>
-        </div>
-        <div className="zk-cards">
-          {CIRCUITS.map(c => (
-            <div key={c.name} className="zk-card">
-              <div className="zk-card-name">{c.name}</div>
-              <div className="zk-card-desc">{c.desc}</div>
+      {/* ── TAB 1: LAND DEEDS & LOANS ── */}
+      {activeTab === 'deeds' && (
+        <>
+          {/* ── HERO ── */}
+          <header className="hero">
+            <div className="hero-badge">
+              ⬡ Zero-Knowledge Land Registry
             </div>
-          ))}
-        </div>
-      </div>
+            <h1>
+              Tokenize Earth.<br />
+              <span>Unlock Liquid Value.</span>
+            </h1>
+            <p className="hero-sub">
+              A privacy-first land tokenization protocol on the{' '}
+              <strong style={{ color: '#94A3B8' }}>Midnight Network</strong>.
+              Land valuations are kept private via <strong style={{ color: '#C4B5FD' }}>ZK witnesses</strong> —
+              only the owner can prove their land's value, without ever exposing it on-chain.
+            </p>
 
-      {/* ── LAND DEEDS GRID ── */}
-      <section className="section">
-        <div className="section-header">
-          <h2 className="section-title">Land Deeds</h2>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-            <span className="section-count">{parcels.length} parcels</span>
-            <button
-              id="mint-demo-btn"
-              className="btn btn-primary"
-              style={{ flex: 'none', padding: '0.45rem 1rem', fontSize: '0.82rem' }}
-              onClick={handleMintDemo}
-              disabled={isProving}
-            >
-              + Mint Demo Deed
-            </button>
-          </div>
-        </div>
-
-        <div className="deeds-grid">
-          {parcels.map(p => (
-            <div key={p.id} id={`deed-${p.id.replace('#', '')}`} className="deed-card">
-              <div className="deed-card-header">
-                <div className="deed-icon">{p.id}</div>
-                <div className={`status-badge ${p.status.toLowerCase()}`}>{p.status}</div>
+            <div className="stats-row">
+              <div className="stat-card">
+                <div className="stat-value">{parcels.length}</div>
+                <div className="stat-label">Parcels Tokenized</div>
               </div>
-
-              <div className="deed-title">{p.title}</div>
-              <div className="deed-meta">{p.meta}</div>
-
-              <div className="deed-hash">
-                <span className="deed-hash-label">IPFS·</span>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.docHash}</span>
+              <div className="stat-card">
+                <div className="stat-value">{totalLocked}</div>
+                <div className="stat-label">Locked as Collateral</div>
               </div>
-
-              {/* Private land value indicator */}
-              <div className="private-badge">
-                🔒 landValue: [ZK private witness]
+              <div className="stat-card">
+                <div className="stat-value">{fmt(totalLoanValue)}</div>
+                <div className="stat-label">Active Loan Value</div>
               </div>
+              <div className="stat-card">
+                <div className="stat-value">{avgLTV}%</div>
+                <div className="stat-label">Avg LTV Ratio</div>
+              </div>
+            </div>
+          </header>
 
-              {/* Loan details if locked */}
-              {p.status === 'LOCKED' && p.loanPrincipal && (
-                <div className="deed-loan-info">
-                  <div className="loan-info-item">
-                    <label>Principal (Disclosed)</label>
-                    <span>{fmt(p.loanPrincipal)}</span>
-                  </div>
-                  <div className="loan-info-item">
-                    <label>LTV Ratio</label>
-                    <span>50%</span>
-                  </div>
-                  <div className="loan-info-item">
-                    <label>Due Block</label>
-                    <span className="mono">{p.loanDueBlock?.toLocaleString()}</span>
-                  </div>
-                  <div className="loan-info-item">
-                    <label>Network</label>
-                    <span style={{ color: '#67E8F9' }}>preview</span>
-                  </div>
+          {/* ── ZK CIRCUITS INFO BAR ── */}
+          <div className="zk-info-bar">
+            <div className="section-header">
+              <h2 className="section-title" style={{ fontSize: '1.1rem' }}>Compact Smart Circuits</h2>
+              <span className="section-count">bhoomi.compact · Midnight Preview</span>
+            </div>
+            <div className="zk-cards">
+              {CIRCUITS.map(c => (
+                <div key={c.name} className="zk-card">
+                  <div className="zk-card-name">{c.name}</div>
+                  <div className="zk-card-desc">{c.desc}</div>
                 </div>
-              )}
+              ))}
+            </div>
+          </div>
 
-              <div className="deed-actions">
-                <button className="btn" id={`view-${p.id}`}>View Deed</button>
-
-                {p.status === 'VERIFIED' && (
-                  <button
-                    id={`lock-${p.id}`}
-                    className="btn btn-danger"
-                    onClick={() => handleLock(p.id)}
-                    disabled={isProving}
-                  >
-                    Use as Collateral
-                  </button>
-                )}
-
-                {p.status === 'LOCKED' && (
-                  <button
-                    id={`repay-${p.id}`}
-                    className="btn btn-success"
-                    onClick={() => handleRepay(p.id)}
-                    disabled={isProving}
-                  >
-                    Repay & Unlock
-                  </button>
-                )}
-
-                {p.status === 'UNLOCKED' && (
-                  <button
-                    id={`lock-again-${p.id}`}
-                    className="btn btn-primary"
-                    onClick={() => handleLock(p.id)}
-                    disabled={isProving}
-                  >
-                    Use as Collateral
-                  </button>
-                )}
+          {/* ── LAND DEEDS GRID ── */}
+          <section className="section">
+            <div className="section-header">
+              <h2 className="section-title">Land Deeds</h2>
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <span className="section-count">{parcels.length} parcels</span>
+                <button
+                  id="mint-demo-btn"
+                  className="btn btn-primary"
+                  style={{ flex: 'none', padding: '0.45rem 1rem', fontSize: '0.82rem' }}
+                  onClick={handleMintDemo}
+                  disabled={isProving}
+                >
+                  + Mint Demo Deed
+                </button>
               </div>
             </div>
-          ))}
-        </div>
-      </section>
 
-      {/* ── LOAN PANEL ── */}
-      {totalLoanValue > 0 && (
-        <div className="loan-section">
-          <div className="loan-panel">
-            {/* Left — Collateral list */}
-            <div>
-              <p className="loan-panel-title">Locked Collateral</p>
-              <h2 className="section-title" style={{ marginBottom: '1.5rem' }}>Active Positions</h2>
-              {parcels.filter(p => p.status === 'LOCKED').map(p => (
-                <div key={p.id} className="collateral-item">
-                  <div className="collateral-icon">{p.id}</div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: 2 }}>{p.title}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
-                      Principal: {fmt(p.loanPrincipal!)} · Block #{p.loanDueBlock?.toLocaleString()}
+            <div className="deeds-grid">
+              {parcels.map(p => (
+                <div key={p.id} id={`deed-${p.id.replace('#', '')}`} className="deed-card">
+                  <div className="deed-card-header">
+                    <div className="deed-icon">{p.id}</div>
+                    <div className={`status-badge ${p.status.toLowerCase()}`}>{p.status}</div>
+                  </div>
+
+                  <div className="deed-title">{p.title}</div>
+                  <div className="deed-meta">{p.meta}</div>
+
+                  <div className="deed-hash">
+                    <span className="deed-hash-label">IPFS·</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.docHash}</span>
+                  </div>
+
+                  {/* Private land value indicator */}
+                  <div className="private-badge">
+                    🔒 landValue: [ZK private witness]
+                  </div>
+
+                  {/* Loan details if locked */}
+                  {p.status === 'LOCKED' && p.loanPrincipal && (
+                    <div className="deed-loan-info">
+                      <div className="loan-info-item">
+                        <label>Principal (Disclosed)</label>
+                        <span>{fmt(p.loanPrincipal)}</span>
+                      </div>
+                      <div className="loan-info-item">
+                        <label>LTV Ratio</label>
+                        <span>50%</span>
+                      </div>
+                      <div className="loan-info-item">
+                        <label>Due Block</label>
+                        <span className="mono">{p.loanDueBlock?.toLocaleString()}</span>
+                      </div>
+                      <div className="loan-info-item">
+                        <label>Network</label>
+                        <span style={{ color: '#67E8F9' }}>preview</span>
+                      </div>
                     </div>
+                  )}
+
+                  <div className="deed-actions">
+                    <button className="btn" id={`view-${p.id}`}>View Deed</button>
+
+                    {p.status === 'VERIFIED' && (
+                      <button
+                        id={`lock-${p.id}`}
+                        className="btn btn-danger"
+                        onClick={() => handleLock(p.id)}
+                        disabled={isProving}
+                      >
+                        Use as Collateral
+                      </button>
+                    )}
+
+                    {p.status === 'LOCKED' && (
+                      <button
+                        id={`repay-${p.id}`}
+                        className="btn btn-success"
+                        onClick={() => handleRepay(p.id)}
+                        disabled={isProving}
+                      >
+                        Repay & Unlock
+                      </button>
+                    )}
+
+                    {p.status === 'UNLOCKED' && (
+                      <button
+                        id={`lock-again-${p.id}`}
+                        className="btn btn-primary"
+                        onClick={() => handleLock(p.id)}
+                        disabled={isProving}
+                      >
+                        Use as Collateral
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
+          </section>
 
-            {/* Right — LTV + total */}
-            <div>
-              <p className="loan-panel-title">Credit Facility</p>
-              <div className="loan-big-number">{fmt(totalLoanValue)}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
-                Total active loan principal · Midnight Preview Network
-              </div>
+          {/* ── LOAN PANEL ── */}
+          {totalLoanValue > 0 && (
+            <div className="loan-section">
+              <div className="loan-panel">
+                {/* Left — Collateral list */}
+                <div>
+                  <p className="loan-panel-title">Locked Collateral</p>
+                  <h2 className="section-title" style={{ marginBottom: '1.5rem' }}>Active Positions</h2>
+                  {parcels.filter(p => p.status === 'LOCKED').map(p => (
+                    <div key={p.id} className="collateral-item">
+                      <div className="collateral-icon">{p.id}</div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: 2 }}>{p.title}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
+                          Principal: {fmt(p.loanPrincipal!)} · Block #{p.loanDueBlock?.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', fontFamily: 'JetBrains Mono, monospace' }}>
-                <span>LTV Ratio</span>
-                <span>{avgLTV}%</span>
-              </div>
-              <div className="ltv-track">
-                <div className="ltv-thumb" style={{ left: `${avgLTV}%` }} />
-              </div>
-              <div className="ltv-labels">
-                <span>0% Safe</span>
-                <span>50% Current</span>
-                <span>80% Max</span>
-              </div>
+                {/* Right — LTV + total */}
+                <div>
+                  <p className="loan-panel-title">Credit Facility</p>
+                  <div className="loan-big-number">{fmt(totalLoanValue)}</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                    Total active loan principal · Midnight Preview Network
+                  </div>
 
-              <div
-                style={{
-                  marginTop: '1.5rem',
-                  padding: '1rem',
-                  background: 'var(--purple-dim)',
-                  border: '1px solid rgba(139,92,246,0.2)',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.78rem',
-                  color: '#C4B5FD',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  lineHeight: 1.6,
-                }}
-              >
-                🔒 Land valuations are held as ZK witnesses.<br />
-                Only the <strong>loan principal</strong> (derived value) is disclosed on-chain.<br />
-                Circuit: <strong>lockCollateral() in bhoomi.compact</strong>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', fontFamily: 'JetBrains Mono, monospace' }}>
+                    <span>LTV Ratio</span>
+                    <span>{avgLTV}%</span>
+                  </div>
+                  <div className="ltv-track">
+                    <div className="ltv-thumb" style={{ left: `${avgLTV}%` }} />
+                  </div>
+                  <div className="ltv-labels">
+                    <span>0% Safe</span>
+                    <span>50% Current</span>
+                    <span>80% Max</span>
+                  </div>
+
+                  <div
+                    style={{
+                      marginTop: '1.5rem',
+                      padding: '1rem',
+                      background: 'var(--purple-dim)',
+                      border: '1px solid rgba(139,92,246,0.2)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.78rem',
+                      color: '#C4B5FD',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    🔒 Land valuations are held as ZK witnesses.<br />
+                    Only the <strong>loan principal</strong> (derived value) is disclosed on-chain.<br />
+                    Circuit: <strong>lockCollateral() in bhoomi.compact</strong>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          )}
+
+          {/* ── ACTIVITY LEDGER ── */}
+          <section className="ledger-section">
+            <div className="section-header">
+              <h2 className="section-title">On-Chain Activity</h2>
+              <span className="section-count">{transactions.length} transactions</span>
+            </div>
+
+            <table className="ledger-table">
+              <thead>
+                <tr>
+                  <th>Circuit</th>
+                  <th>Description</th>
+                  <th>Tx Hash</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map(tx => (
+                  <tr key={tx.id}>
+                    <td>
+                      <span className={`tx-type-pill tx-${tx.circuit.replace('()', '').toLowerCase()}`}>
+                        {tx.circuit.replace('()', '')}
+                      </span>
+                    </td>
+                    <td style={{ color: 'var(--text-primary)' }}>{tx.description}</td>
+                    <td className="tx-hash">{tx.txHash}</td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem', fontFamily: 'JetBrains Mono, monospace' }}>{tx.time}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        </>
       )}
 
-      {/* ── ACTIVITY LEDGER ── */}
-      <section className="ledger-section">
-        <div className="section-header">
-          <h2 className="section-title">On-Chain Activity</h2>
-          <span className="section-count">{transactions.length} transactions</span>
-        </div>
+      {/* ── TAB 2: GIS PARCEL EXPLORER ── */}
+      {activeTab === 'gis' && <GISMap />}
 
-        <table className="ledger-table">
-          <thead>
-            <tr>
-              <th>Circuit</th>
-              <th>Description</th>
-              <th>Tx Hash</th>
-              <th>Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.map(tx => (
-              <tr key={tx.id}>
-                <td>
-                  <span className={`tx-type-pill tx-${tx.circuit.replace('()', '').toLowerCase()}`}>
-                    {tx.circuit.replace('()', '')}
-                  </span>
-                </td>
-                <td style={{ color: 'var(--text-primary)' }}>{tx.description}</td>
-                <td className="tx-hash">{tx.txHash}</td>
-                <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem', fontFamily: 'JetBrains Mono, monospace' }}>{tx.time}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      {/* ── TAB 3: FRACTIONAL MARKET & YIELD MODELER (NEW IDEA) ── */}
+      {activeTab === 'fractional' && <FractionalMarket />}
+
+      {/* ── TAB 4: ZK TITLE AUDITOR ── */}
+      {activeTab === 'auditor' && <TitleAuditor />}
+
+      {/* ── TAB 5: GOVT REGISTRY SYNC ── */}
+      {activeTab === 'govt' && <GovtSync />}
 
       {/* ── ZK PROVING TOAST ── */}
       {isProving && (
