@@ -17,7 +17,7 @@
 |---|---|
 | 🌐 **Live Demo** | [https://bhoomi-chain-t23t.vercel.app](https://bhoomi-chain-t23t.vercel.app) |
 | 📦 **GitHub Repo** | [https://github.com/Shubhham-golekar/BhoomiChain](https://github.com/Shubhham-golekar/BhoomiChain) |
-| 🐦 **X (Twitter)** | [@BhoomiChainApp](https://x.com/BhoomiChainApp) |
+| 🐦 **X (Twitter)** | [@Shubham_36_46](https://x.com/Shubham_36_46) |
 | 📄 **Contract Address** | `preprod1qbhoomi8899059757969935442f408c64d4b73f9d8a01447f5f` on Midnight Preprod Testnet |
 | 🔍 **Block Explorer** | [explorer.midnight.network](https://explorer.midnight.network) |
 | 🎬 **Demo Video** | [Watch on Loom](https://www.loom.com/share/c59eb64e4a3c422c94cc0e7558ae072d) |
@@ -33,7 +33,7 @@
 | ✅ Working MVP live on Preview Testnet | **DONE** | [https://bhoomi-chain-t23t.vercel.app](https://bhoomi-chain-t23t.vercel.app) |
 | ✅ Documentation (README + setup + usage) | **DONE** | This file |
 | ✅ CI/CD pipeline on product repo | **DONE** | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — [![CI](https://github.com/Shubhham-golekar/BhoomiChain/actions/workflows/ci.yml/badge.svg)](https://github.com/Shubhham-golekar/BhoomiChain/actions/workflows/ci.yml) |
-| ✅ Product X profile linked in README | **DONE** | [@BhoomiChainApp](https://x.com/BhoomiChainApp) |
+| ✅ Product X profile linked in README | **DONE** | [@Shubham_36_46](https://x.com/Shubham_36_46) |
 | ✅ Minimum 15 meaningful commits | **DONE** | 22 commits — [View commits](https://github.com/Shubhham-golekar/BhoomiChain/commits/main) |
 
 ### Submission Checklist
@@ -43,7 +43,7 @@
 | ✅ Public GitHub repository with full documentation | **DONE** | [GitHub Repo](https://github.com/Shubhham-golekar/BhoomiChain) |
 | ✅ Live Preview demo link + contract address | **DONE** | [Live Site](https://bhoomi-chain-t23t.vercel.app) |
 | ✅ CI/CD badge + workflow file with passing runs | **DONE** | [ci.yml](.github/workflows/ci.yml) |
-| ✅ Link to product X profile | **DONE** | [@BhoomiChainApp](https://x.com/BhoomiChainApp) |
+| ✅ Link to product X profile | **DONE** | [@Shubham_36_46](https://x.com/Shubham_36_46) |
 | ✅ Demo video of MVP | **DONE** | [Watch Loom Demo](https://www.loom.com/share/c59eb64e4a3c422c94cc0e7558ae072d) |
 | ✅ Minimum 15 meaningful commits | **DONE** | 22 commits |
 
@@ -347,7 +347,7 @@ Watch the full MVP walkthrough demonstrating:
 ## 🐦 Social / X Profile
 
 Follow BhoomiChain on X for updates:
-**[@BhoomiChainApp](https://x.com/BhoomiChainApp)**
+**[@Shubham_36_46](https://x.com/Shubham_36_46)**
 
 > Product X profile linked as required for submission.
 
