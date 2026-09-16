@@ -6,6 +6,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-green)](LICENSE)
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black)](https://bhoomi-chain-t23t.vercel.app)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Shubham%20Golekar-0A66C2)](https://www.linkedin.com/in/shubham-golekar-82492b321/)
+[![Feedback](https://img.shields.io/badge/Feedback-Google%20Sheet-34A853)](https://docs.google.com/spreadsheets/d/16m0PclVS-491U1zQuNJh3jR9lSeezz6Gbo-2P3bZp8w/edit?usp=sharing)
 
 > **Privacy-First Land Tokenization & DeFi Lending Protocol on the Midnight Network**  
 > Land valuations stay **100% private** via Zero-Knowledge witnesses — only the land owner proves collateral eligibility without ever exposing valuation data on-chain.
@@ -19,8 +20,9 @@
 | 🌐 **Live DApp** | [bhoomi-chain-t23t.vercel.app](https://bhoomi-chain-t23t.vercel.app) |
 | 📦 **GitHub Repository** | [github.com/Shubhham-golekar/BhoomiChain](https://github.com/Shubhham-golekar/BhoomiChain) |
 | 💼 **LinkedIn Profile** | [Shubham Golekar](https://www.linkedin.com/in/shubham-golekar-82492b321/) |
-| � **LinkedIn Announcement** | [View LinkedIn Post](https://www.linkedin.com/posts/shubham-golekar-82492b321_web3-blockchain-zeroknowledge-activity-7505919447598215169-W19M) |
-| �📄 **Contract Address** | `preprod1qbhoomi8899059757969935442f408c64d4b73f9d8a01447f5f` (Midnight Preprod Testnet) |
+| 📢 **LinkedIn Announcement** | [View LinkedIn Post](https://www.linkedin.com/posts/shubham-golekar-82492b321_web3-blockchain-zeroknowledge-activity-7505919447598215169-W19M) |
+| 📋 **Feedback Form / Tracker** | [View Google Feedback Sheet](https://docs.google.com/spreadsheets/d/16m0PclVS-491U1zQuNJh3jR9lSeezz6Gbo-2P3bZp8w/edit?usp=sharing) |
+| 📄 **Contract Address** | `preprod1qbhoomi8899059757969935442f408c64d4b73f9d8a01447f5f` (Midnight Preprod Testnet) |
 | 🔍 **Block Explorer** | [explorer.midnight.network](https://explorer.midnight.network) |
 | 🎬 **Demo Video** | [Watch Loom Walkthrough](https://www.loom.com/share/c59eb64e4a3c422c94cc0e7558ae072d) |
 
@@ -34,6 +36,7 @@
 | ✅ **Comprehensive Documentation** | **DONE** | Full README & Setup Guide |
 | ✅ **CI/CD Build & Lint Pipeline** | **DONE** | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — [![CI](https://github.com/Shubhham-golekar/BhoomiChain/actions/workflows/ci.yml/badge.svg)](https://github.com/Shubhham-golekar/BhoomiChain/actions/workflows/ci.yml) |
 | ✅ **LinkedIn Profile & Announcement** | **DONE** | [LinkedIn Post](https://www.linkedin.com/posts/shubham-golekar-82492b321_web3-blockchain-zeroknowledge-activity-7505919447598215169-W19M) |
+| ✅ **Feedback Form / Tracker** | **DONE** | [Google Feedback Sheet](https://docs.google.com/spreadsheets/d/16m0PclVS-491U1zQuNJh3jR9lSeezz6Gbo-2P3bZp8w/edit?usp=sharing) |
 | ✅ **Demo Video Walkthrough** | **DONE** | [Watch on Loom](https://www.loom.com/share/c59eb64e4a3c422c94cc0e7558ae072d) |
 | ✅ **15+ Meaningful Commits** | **DONE** | 22 Traceable Commits — [View Commit History](https://github.com/Shubhham-golekar/BhoomiChain/commits/main) |
 
@@ -51,7 +54,7 @@
 - [Usage Guide](#usage-guide)
 - [CI/CD Pipeline](#cicd-pipeline)
 - [Deployment Evidence](#deployment-evidence)
-- [Creator & Socials](#creator--socials)
+- [Creator & Feedback](#creator--feedback)
 - [License](#license)
 
 ---
@@ -73,7 +76,7 @@ BhoomiChain is a **decentralized land tokenization and zero-knowledge DeFi lendi
 
 ---
 
-## � Why Midnight Network?
+## 🌙 Why Midnight Network?
 
 In traditional public blockchains (like Ethereum), all state data is transparent. Anyone can inspect your real estate valuation, collateral ratio, and borrowing history. 
 
@@ -259,11 +262,12 @@ Automated quality check triggered on every push to `main`:
 
 ---
 
-## 💼 Creator & Socials
+## 💼 Creator & Feedback
 
 - **Developer**: Shubham Golekar
 - **LinkedIn Profile**: [Shubham Golekar](https://www.linkedin.com/in/shubham-golekar-82492b321/)
 - **Announcement Post**: [View LinkedIn Post](https://www.linkedin.com/posts/shubham-golekar-82492b321_web3-blockchain-zeroknowledge-activity-7505919447598215169-W19M)
+- **User Feedback Form / Tracker**: [Google Feedback Sheet](https://docs.google.com/spreadsheets/d/16m0PclVS-491U1zQuNJh3jR9lSeezz6Gbo-2P3bZp8w/edit?usp=sharing)
 
 ---
 
