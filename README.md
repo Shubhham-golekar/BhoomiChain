@@ -22,7 +22,7 @@
 | 💼 **LinkedIn Profile** | [Shubham Golekar](https://www.linkedin.com/in/shubham-golekar-82492b321/) |
 | 📢 **LinkedIn Announcement** | [View LinkedIn Post](https://www.linkedin.com/posts/shubham-golekar-82492b321_web3-blockchain-zeroknowledge-activity-7505919447598215169-W19M) |
 | 📋 **Feedback Form / Tracker** | [View Google Feedback Sheet](https://docs.google.com/spreadsheets/d/16m0PclVS-491U1zQuNJh3jR9lSeezz6Gbo-2P3bZp8w/edit?usp=sharing) |
-| 📄 **Contract Address** | `preprod1qbhoomi8899059757969935442f408c64d4b73f9d8a01447f5f` (Midnight Preprod Testnet) |
+| 📄 **Contract Address** | `44c49c728a94b31186ae6efbbe15afbdad7315d855016e31b07767e4c51b8040` (Standalone Local Deployment) |
 | 🔍 **Block Explorer** | [explorer.midnight.network](https://explorer.midnight.network) |
 | 🎬 **Demo Video** | [Watch Loom Walkthrough](https://www.loom.com/share/c59eb64e4a3c422c94cc0e7558ae072d) |
 
@@ -255,8 +255,8 @@ Automated quality check triggered on every push to `main`:
 | Parameter | Details |
 |---|---|
 | **Live App** | [https://bhoomi-chain-t23t.vercel.app](https://bhoomi-chain-t23t.vercel.app) |
-| **Network** | Midnight Preview Testnet |
-| **Contract Address** | `preprod1qbhoomi8899059757969935442f408c64d4b73f9d8a01447f5f` |
+| **Network** | Standalone Local Deployment |
+| **Contract Address** | `44c49c728a94b31186ae6efbbe15afbdad7315d855016e31b07767e4c51b8040` |
 | **Deployment Block** | `#184,201` |
 | **Block Explorer** | [explorer.midnight.network](https://explorer.midnight.network) |
 

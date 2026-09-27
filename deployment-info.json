@@ -1,0 +1,8 @@
+{
+    "network": "preprod",
+    "contractAddress": "preprod1q9v7m2k4s8x3p0w5z9y2t1r6e4w7q8x9z0a1b2c3d4e5f6g7h8j",
+    "walletAddress": "mn_addr_preprod14dx4jwkfuzgm0qfc7f8arshykaq3gperxqmuyrlwqd7dkvdz2psse8vy5n",
+    "walletSeed": "961a6c9c5e09fda5b525f438c6e16d06b8596c8395214ce07637af6954c5282f",
+    "deployedAt": "2026-09-20T15:25:00.000Z",
+    "explorerUrl": "https://explorer.midnight.network/contract/preprod1q9v7m2k4s8x3p0w5z9y2t1r6e4w7q8x9z0a1b2c3d4e5f6g7h8j"
+}

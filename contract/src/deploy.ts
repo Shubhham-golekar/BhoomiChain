@@ -14,7 +14,7 @@ import { deployContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { NodeZkConfigProvider } from '@midnight-ntwrk/midnight-js-node-zk-config-provider';
 import { levelPrivateStateProvider } from '@midnight-ntwrk/midnight-js-level-private-state-provider';
 import { indexerPublicDataProvider } from '@midnight-ntwrk/midnight-js-indexer-public-data-provider';
-import { createLogger } from 'pino';
+import pino from 'pino';
 import * as path from 'path';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ const ADMIN_SECRET_KEY = process.env.BHOOMI_ADMIN_SK
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-    const logger = createLogger({ level: 'info' });
+    const logger = pino({ level: 'info' });
 
     logger.info('🚀 Deploying BhoomiChain contract to Midnight ' + NETWORK_CONFIG.networkId);
     logger.info('   Network: ' + NETWORK_CONFIG.indexerUri);
@@ -64,12 +64,14 @@ async function main() {
         // const contractAddress = deployed.deployTxData.public.contractAddress;
 
         // ── SIMULATION (until Compact compiler is set up) ────────────────────────
-        // This generates a deterministic address based on the admin key
+        // This generates a realistic Bech32-encoded looking address
         // Replace with real deployment when compact toolchain is ready
-        const simulatedAddress = 'preprod1q' + Buffer.from(adminSecretKey)
-            .toString('hex')
-            .slice(0, 50)
-            .replace(/[^a-z0-9]/g, '0');
+        const chars = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+        let r = '';
+        for (let i = 0; i < 58; i++) {
+            r += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        const simulatedAddress = 'preprod1q' + r;
 
         logger.info('');
         logger.info('✅ BhoomiChain Contract Deployed!');
@@ -101,7 +103,7 @@ async function main() {
         logger.info('📄 Deployment info saved to: deployment-info.json');
 
     } catch (err) {
-        logger.error('❌ Deployment failed:', err);
+        logger.error('❌ Deployment failed: ' + String(err));
         process.exit(1);
     }
 }

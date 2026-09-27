@@ -126,6 +126,10 @@ export const waitForUnshieldedFunds = async (
         Rx.filter(
           (state: FacadeState) => isFacadeStateSynced(state) && (state.unshielded.balances[tokenType.raw] ?? 0n) > 0n,
         ),
+        Rx.timeout({
+          first: 180_000,
+          with: () => Rx.throwError(() => new Error('Timed out waiting for testnet tokens from faucet. Please claim tokens via faucet browser UI and retry.')),
+        }),
         Rx.tap(() => logger.info('Sync complete')),
         Rx.tap((state: FacadeState) => {
           const shieldedBalances = state.shielded.balances || {};

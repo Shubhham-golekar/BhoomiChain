@@ -10,9 +10,10 @@
     "ci": "npm run typecheck && npm run lint && npm run build",
     "lint": "eslint src",
     "prepack": "npm run build",
-    "standalone": "node --import tsx/esm src/launcher/standalone.ts",
-    "preview-remote": "node --import tsx/esm src/launcher/preview.ts",
-    "preprod-remote": "node --import tsx/esm src/launcher/preprod.ts",
+    "standalone": "node --max-old-space-size=8192 --import tsx/esm src/launcher/standalone.ts",
+    "preview-remote": "node --max-old-space-size=8192 --import tsx/esm src/launcher/preview.ts",
+    "preprod-remote": "node --max-old-space-size=8192 --import tsx/esm src/launcher/preprod.ts",
+    "auto-deploy": "node --max-old-space-size=8192 --import tsx/esm src/launcher/auto-deploy.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

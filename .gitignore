@@ -9,6 +9,17 @@ package-lock.json
 
 # TypeScript
 *.tsbuildinfo
+contract/src/*.d.ts
+contract/src/*.js
+contract/src/*.js.map
+api/src/*.d.ts
+api/src/*.js
+api/src/*.js.map
+api/src/utils/*.d.ts
+api/src/utils/*.js
+api/src/utils/*.js.map
+*.bak
+
 
 # Logs
 logs

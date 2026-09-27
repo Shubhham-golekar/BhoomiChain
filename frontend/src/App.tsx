@@ -140,6 +140,13 @@ export default function App() {
     step: 'confirm', txHash: '', errorMsg: ''
   });
 
+  // Land Registration Form Modal state
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [regTitle, setRegTitle] = useState('');
+  const [regMeta, setRegMeta] = useState('');
+  const [regValue, setRegValue] = useState('');
+  const [regDocHash, setRegDocHash] = useState('');
+
   // Both 'connected' (real wallet) and 'demo' allow circuit actions
   const isConnected = walletState === 'connected' || walletState === 'demo';
 
@@ -375,6 +382,33 @@ export default function App() {
       };
       setParcels(prev => [...prev, demo]);
       addTx('mintParcel', `Admin minted Land Deed ${id}`);
+    });
+  };
+
+  const handleRegisterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regTitle || !regValue) return;
+
+    setShowRegisterModal(false);
+    runCircuit('mintParcel()', () => {
+      const next = parcels.length + 1;
+      const id = `#${String(next).padStart(4, '0')}`;
+      const numVal = parseFloat(regValue.replace(/,/g, '')) || 10_000_000;
+      const newParcel: Parcel = {
+        id,
+        title: regTitle,
+        meta: regMeta || '2.0 Acres • Private Property • Survey 402/B',
+        docHash: regDocHash || `Qm${Math.random().toString(36).slice(2, 8)}...${Math.random().toString(36).slice(2, 6)}`,
+        status: 'VERIFIED',
+        landValue: numVal,
+      };
+      setParcels(prev => [...prev, newParcel]);
+      addTx('mintParcel', `Minted Land Deed ${id} — ${regTitle}`);
+      // Reset form
+      setRegTitle('');
+      setRegMeta('');
+      setRegValue('');
+      setRegDocHash('');
     });
   };
 
@@ -630,6 +664,126 @@ export default function App() {
               <a href="https://midnight.network/ecosystem" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--aurora-end)' }}>midnight.network/ecosystem</a>
               {' '}or use Demo Mode to explore BhoomiChain.
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── REGISTER NEW LAND PARCEL MODAL ── */}
+      {showRegisterModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)',
+            zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+          }}
+          onClick={() => setShowRegisterModal(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--midnight-2)', border: '1px solid var(--border-bright)',
+              borderRadius: 'var(--radius-xl)', padding: '2rem', maxWidth: 500, width: '100%',
+              boxShadow: 'var(--shadow-lg)'
+            }}
+          >
+            <div style={{ fontSize: '1.4rem', fontFamily: 'Playfair Display,serif', fontWeight: 600, marginBottom: '0.25rem' }}>
+              🏡 Register New Land Parcel
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1.5rem', fontFamily: 'JetBrains Mono,monospace' }}>
+              Mint ZK-verified Land Deed NFT · BhoomiChain Protocol
+            </div>
+
+            <form onSubmit={handleRegisterSubmit}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', fontWeight: 600 }}>
+                  Land / Estate Title *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Alibaug Beachfront Land"
+                  value={regTitle}
+                  onChange={e => setRegTitle(e.target.value)}
+                  required
+                  style={{
+                    width: '100%', padding: '0.75rem', background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)', color: '#fff', fontSize: '0.88rem', fontFamily: 'Outfit,sans-serif'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', fontWeight: 600 }}>
+                  Survey / CTS / Metadata
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 4.2 Acres • Agricultural • Survey 118/A"
+                  value={regMeta}
+                  onChange={e => setRegMeta(e.target.value)}
+                  style={{
+                    width: '100%', padding: '0.75rem', background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)', color: '#fff', fontSize: '0.88rem', fontFamily: 'Outfit,sans-serif'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#C4B5FD', marginBottom: '0.4rem', fontWeight: 600 }}>
+                  Estimated Valuation (₹) * <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(Held as Private ZK Witness)</span>
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 15000000 (1.5 Cr)"
+                  value={regValue}
+                  onChange={e => setRegValue(e.target.value)}
+                  required
+                  style={{
+                    width: '100%', padding: '0.75rem', background: 'var(--surface)', border: '1px solid rgba(124,58,237,0.4)',
+                    borderRadius: 'var(--radius-md)', color: '#fff', fontSize: '0.88rem', fontFamily: 'JetBrains Mono,monospace'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', fontWeight: 600 }}>
+                  Govt Document IPFS Hash (7/12 Extract)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. QmZ9x...8kLP (Optional auto-generated if blank)"
+                  value={regDocHash}
+                  onChange={e => setRegDocHash(e.target.value)}
+                  style={{
+                    width: '100%', padding: '0.75rem', background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)', color: 'var(--text-muted)', fontSize: '0.8rem', fontFamily: 'JetBrains Mono,monospace'
+                  }}
+                />
+              </div>
+
+              <div style={{ padding: '0.75rem', background: 'rgba(124,58,237,0.08)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(124,58,237,0.2)', marginBottom: '1.5rem', fontSize: '0.73rem', color: '#A78BFA', fontFamily: 'JetBrains Mono,monospace', lineHeight: 1.6 }}>
+                🔒 Valuation (₹{regValue ? Number(regValue).toLocaleString('en-IN') : '0'}) will remain a private ZK witness. It will not be stored publicly on-chain.
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterModal(false)}
+                  style={{
+                    flex: 1, padding: '0.75rem', background: 'var(--surface)', border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'Outfit,sans-serif'
+                  }}
+                >Cancel</button>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 2, padding: '0.75rem', background: 'linear-gradient(135deg,#7C3AED,#0EA5E9)',
+                    border: 'none', borderRadius: 'var(--radius-md)', color: '#fff', fontWeight: 700,
+                    cursor: 'pointer', fontFamily: 'Outfit,sans-serif', boxShadow: '0 4px 20px rgba(124,58,237,0.3)'
+                  }}
+                >
+                  ⬡ Mint ZK Deed & Register
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -992,13 +1146,25 @@ export default function App() {
               <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
                 <span className="section-count">{parcels.length} parcels</span>
                 <button
-                  id="mint-demo-btn"
+                  id="register-land-btn"
                   className="btn btn-primary"
-                  style={{ flex: 'none', padding: '0.45rem 1rem', fontSize: '0.82rem' }}
+                  style={{ flex: 'none', padding: '0.45rem 1rem', fontSize: '0.82rem', background: 'linear-gradient(135deg,#7C3AED,#0EA5E9)', border: 'none', boxShadow: '0 4px 14px rgba(124,58,237,0.3)' }}
+                  onClick={() => {
+                    if (!isConnected) { setShowWalletModal(true); return; }
+                    setShowRegisterModal(true);
+                  }}
+                  disabled={isProving}
+                >
+                  + Register New Land
+                </button>
+                <button
+                  id="mint-demo-btn"
+                  className="btn"
+                  style={{ flex: 'none', padding: '0.45rem 0.85rem', fontSize: '0.82rem', background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
                   onClick={handleMintDemo}
                   disabled={isProving}
                 >
-                  + Mint Demo Deed
+                  + Quick Demo
                 </button>
               </div>
             </div>

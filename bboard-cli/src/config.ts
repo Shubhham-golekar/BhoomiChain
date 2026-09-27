@@ -15,6 +15,8 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+import axios from 'axios';
 import {
   EnvironmentConfiguration,
   getTestEnvironment,
@@ -23,6 +25,23 @@ import {
 } from '@midnight-ntwrk/testkit-js';
 import { setNetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import { Logger } from 'pino';
+
+// Override default 1000ms timeout for network health checks & indexer queries
+axios.interceptors.request.use((config) => {
+  config.timeout = 30000;
+  return config;
+});
+
+export const setNetworkIdGlobal = (netId: string) => {
+  setNetworkId(netId as any);
+  try {
+    const req = createRequire(import.meta.url);
+    const cjs = req('@midnight-ntwrk/midnight-js-network-id');
+    if (cjs && typeof cjs.setNetworkId === 'function') {
+      cjs.setNetworkId(netId);
+    }
+  } catch { }
+};
 
 export interface Config {
   readonly privateStateStoreName: string;
@@ -38,33 +57,34 @@ const formatLogFilename = () => new Date().toISOString().replace(/:/g, '-');
 
 export class StandaloneConfig implements Config {
   getEnvironment(logger: Logger): TestEnvironment {
+    setNetworkIdGlobal('undeployed');
     return getTestEnvironment(logger) as TestEnvironment;
   }
   privateStateStoreName = 'bboard-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'standalone', `${formatLogFilename()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bhoomi');
   generateDust = false;
 }
 
 export class PreviewRemoteConfig implements Config {
   getEnvironment(logger: Logger): TestEnvironment {
-    setNetworkId('preview');
+    setNetworkIdGlobal('preview');
     return new PreviewTestEnvironment(logger);
   }
   privateStateStoreName = 'bboard-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'preview-remote', `${formatLogFilename()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bhoomi');
   generateDust = true;
 }
 
 export class PreprodRemoteConfig implements Config {
   getEnvironment(logger: Logger): TestEnvironment {
-    setNetworkId('preprod');
+    setNetworkIdGlobal('preprod');
     return new PreprodTestEnvironment(logger);
   }
   privateStateStoreName = 'bboard-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'preprod-remote', `${formatLogFilename()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bhoomi');
   generateDust = true;
 }
 
