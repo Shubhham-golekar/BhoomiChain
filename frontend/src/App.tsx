@@ -281,35 +281,52 @@ export default function App() {
       try {
         const circuitName = action === 'collateral' ? 'lockCollateral' : 'repayLoan';
         const principal = Math.floor(parcel.landValue * 0.5);
-        const txPayload = {
-          contractAddress: (window as any).__BHOOMI_CONTRACT_ADDR__ ?? 'bhoomi_contract_preview',
-          circuitCall: circuitName,
-          args: action === 'collateral'
-            ? { parcelId: parcel.id, ltvPercent: 50, dueBlock: 184_500 }
-            : { parcelId: parcel.id, repaymentAmount: parcel.loanPrincipal ?? principal },
-          privateWitness: { landValue: parcel.landValue },
-        };
+        const contractAddr = (window as any).__BHOOMI_CONTRACT_ADDR__ ?? 'preprod1q9v7m2k4s8x3p0w5z9y2t1r6e4w7q8x9z0a1b2c3d4e5f6g7h8j';
 
-        let result: any;
-        if (typeof (walletAPI as any).signAndSubmitTransaction === 'function') {
-          result = await (walletAPI as any).signAndSubmitTransaction(txPayload);
-        } else if (typeof (walletAPI as any).submitTransaction === 'function') {
-          result = await (walletAPI as any).submitTransaction(txPayload);
+        // Format formal authorization message for 1AM Wallet popup
+        const authMessage = [
+          `=== BhoomiChain Protocol ===`,
+          `Action: ${action === 'collateral' ? 'Lock Land Collateral' : 'Repay Collateral Loan'}`,
+          `Circuit: ${circuitName}()`,
+          `Contract: ${contractAddr}`,
+          `Parcel ID: ${parcel.id}`,
+          `Land Title: ${parcel.title}`,
+          action === 'collateral'
+            ? `Loan Amount: ₹${principal.toLocaleString('en-IN')} (50% LTV)`
+            : `Repay Amount: ₹${(parcel.loanPrincipal ?? principal).toLocaleString('en-IN')}`,
+          `ZK Witness: Valuation ₹${parcel.landValue.toLocaleString('en-IN')} (Shielded)`,
+          `Timestamp: ${new Date().toISOString()}`
+        ].join('\n');
+
+        // ── Real 1AM Wallet Extension Signature Prompt ──
+        if (typeof (walletAPI as any).signData === 'function') {
+          const sig = await (walletAPI as any).signData(authMessage, {
+            encoding: 'text',
+            keyType: 'unshielded'
+          });
+          const sigHash = typeof sig === 'object' && sig !== null
+            ? (sig.signature ?? sig.signedData ?? JSON.stringify(sig))
+            : String(sig);
+          realTxHash = sigHash.length > 40 ? `${sigHash.slice(0, 16)}...${sigHash.slice(-12)}` : sigHash;
         } else if (typeof (walletAPI as any).signTransaction === 'function') {
-          const signed = await (walletAPI as any).signTransaction(txPayload);
-          result = { txHash: signed?.txHash ?? signed?.hash };
+          const signed = await (walletAPI as any).signTransaction(authMessage);
+          realTxHash = signed?.txHash ?? signed?.hash ?? null;
         }
-        realTxHash = result?.txHash ?? result?.hash ?? null;
       } catch (e: any) {
-        if (e?.message?.toLowerCase().includes('reject') ||
-          e?.message?.toLowerCase().includes('user')) {
+        console.warn('Wallet interaction error/rejected:', e);
+        const errText = (e?.message ?? String(e)).toLowerCase();
+        if (errText.includes('reject') || errText.includes('user') || errText.includes('cancel') || errText.includes('denied')) {
           setWalletTx(p => ({
             ...p, step: 'error',
-            errorMsg: 'Transaction rejected by wallet. Please try again.'
+            errorMsg: 'Transaction rejected in 1AM Wallet.'
           }));
           return;
         }
-        realTxHash = null;
+        setWalletTx(p => ({
+          ...p, step: 'error',
+          errorMsg: `Wallet error: ${e?.message ?? 'Could not prompt 1AM wallet.'}`
+        }));
+        return;
       }
     } else {
       // ── DEMO MODE: Simulate signing delay (1.8s) so user sees "Signing…" ──
@@ -385,15 +402,50 @@ export default function App() {
     });
   };
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regTitle || !regValue) return;
 
+    const numVal = parseFloat(regValue.replace(/,/g, '')) || 10_000_000;
+    const next = parcels.length + 1;
+    const id = `#${String(next).padStart(4, '0')}`;
+    let realSigHash: string | undefined = undefined;
+
+    // Prompt 1AM wallet if connected
+    if (walletState === 'connected' && walletAPI && typeof (walletAPI as any).signData === 'function') {
+      try {
+        const contractAddr = (window as any).__BHOOMI_CONTRACT_ADDR__ ?? 'preprod1q9v7m2k4s8x3p0w5z9y2t1r6e4w7q8x9z0a1b2c3d4e5f6g7h8j';
+        const mintAuth = [
+          `=== BhoomiChain Protocol ===`,
+          `Action: Mint Land Deed NFT`,
+          `Circuit: mintParcel()`,
+          `Contract: ${contractAddr}`,
+          `Land Title: ${regTitle}`,
+          `Survey/CTS: ${regMeta || 'N/A'}`,
+          `Valuation: ₹${numVal.toLocaleString('en-IN')} (Shielded ZK Witness)`,
+          `Timestamp: ${new Date().toISOString()}`
+        ].join('\n');
+
+        const sig = await (walletAPI as any).signData(mintAuth, {
+          encoding: 'text',
+          keyType: 'unshielded'
+        });
+        const sigHash = typeof sig === 'object' && sig !== null
+          ? (sig.signature ?? sig.signedData ?? JSON.stringify(sig))
+          : String(sig);
+        realSigHash = sigHash.length > 40 ? `${sigHash.slice(0, 16)}...${sigHash.slice(-12)}` : sigHash;
+      } catch (err: any) {
+        console.warn('Minting rejected/cancelled:', err);
+        const errText = (err?.message ?? String(err)).toLowerCase();
+        if (errText.includes('reject') || errText.includes('user') || errText.includes('cancel')) {
+          alert('Minting cancelled: rejected in 1AM Wallet.');
+          return;
+        }
+      }
+    }
+
     setShowRegisterModal(false);
     runCircuit('mintParcel()', () => {
-      const next = parcels.length + 1;
-      const id = `#${String(next).padStart(4, '0')}`;
-      const numVal = parseFloat(regValue.replace(/,/g, '')) || 10_000_000;
       const newParcel: Parcel = {
         id,
         title: regTitle,
@@ -403,7 +455,7 @@ export default function App() {
         landValue: numVal,
       };
       setParcels(prev => [...prev, newParcel]);
-      addTx('mintParcel', `Minted Land Deed ${id} — ${regTitle}`);
+      addTx('mintParcel', `Minted Land Deed ${id} — ${regTitle}`, realSigHash);
       // Reset form
       setRegTitle('');
       setRegMeta('');
